@@ -34,8 +34,10 @@ ENV/
 *.swo
 
 # Project specific
-models/
-llama_cpp_api_package/models/
+models/*
+!models/.gitkeep
+llama_cpp_api_package/models/*
+!llama_cpp_api_package/models/.gitkeep
 llama_cpp_api_package/bin/*/
 !llama_cpp_api_package/bin/windows/*.dll
 
