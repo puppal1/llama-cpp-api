@@ -12,6 +12,14 @@ def get_binary_files():
     current_os = platform.system()
     return binary_files.get(current_os, [])
 
+# Read README with explicit UTF-8 encoding
+try:
+    with open('README.md', 'r', encoding='utf-8') as f:
+        long_description = f.read()
+except Exception as e:
+    print(f"Warning: Could not read README.md: {e}")
+    long_description = "A web interface for llama.cpp models"
+
 setup(
     name="llama_cpp_api",
     version="0.1.0",
@@ -42,7 +50,7 @@ setup(
     author="Your Name",
     author_email="your.email@example.com",
     description="A web interface for llama.cpp models",
-    long_description=open('README.md').read(),
+    long_description=long_description,
     long_description_content_type="text/markdown",
     keywords="llama, machine learning, api",
     url="https://github.com/yourusername/llama_cpp_api",
@@ -55,6 +63,7 @@ setup(
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.13",  # Added Python 3.13 support
     ],
     python_requires=">=3.8",
 ) 
