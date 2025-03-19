@@ -3,23 +3,23 @@ import sys
 import ctypes
 
 def main():
-    print("Testing llama.dll basic functionality")
+    print("Testing libllama.so basic functionality")
 
-    # Get the absolute path to the DLL directory
-    dll_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "llama_cpp_api_package", "bin", "windows"))
-    print(f"DLL directory: {dll_dir}")
+    # Get the absolute path to the SO directory
+    lib_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "llama_cpp_api_package", "bin", "linux"))
+    print(f"Library directory: {lib_dir}")
 
-    # Add DLL directory to the system's DLL search path
-    os.add_dll_directory(dll_dir)
+    # Add library directory to the system's library search path
+    os.environ["LD_LIBRARY_PATH"] = f"{lib_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}"
 
-    # Construct the full path to llama.dll
-    dll_path = os.path.join(dll_dir, "llama.dll")
-    print(f"Attempting to load llama.dll from {dll_path}...")
+    # Construct the full path to libllama.so
+    lib_path = os.path.join(lib_dir, "libllama.so")
+    print(f"Attempting to load libllama.so from {lib_path}...")
 
     try:
-        # Load the DLL
-        llama = ctypes.CDLL(dll_path)
-        print(f"Successfully loaded DLL from {dll_path}")
+        # Load the shared object
+        llama = ctypes.CDLL(lib_path)
+        print(f"Successfully loaded library from {lib_path}")
         
         # Get list of available functions
         print("\nAvailable functions:")
@@ -65,7 +65,7 @@ def main():
             except AttributeError:
                 print(f"  - {func_name}: NOT FOUND")
         
-        print("DLL Test Complete")
+        print("Library Test Complete")
         return 0
         
     except Exception as e:

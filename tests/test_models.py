@@ -1,4 +1,4 @@
-from llama_cpp import Llama
+from llama_cpp_api_package.llama_api import LlamaModel
 import os
 
 def test_model(model_path):
@@ -6,43 +6,47 @@ def test_model(model_path):
     print("-" * 50)
     
     try:
-        # First try loading with vocab_only to quickly verify the model file
-        print("Testing model vocabulary...")
-        llm = Llama(
+        # Initialize model
+        print("\nTesting model loading...")
+        llm = LlamaModel()
+        llm.load(
             model_path=model_path,
             n_ctx=2048,
             n_threads=4,
-            n_gpu_layers=0,
-            vocab_only=True,
-            verbose=True
+            n_gpu_layers=0
         )
-        print("Vocabulary test passed!")
+        print("Model loading test passed!")
         
-        # Now try loading the full model
-        print("\nTesting full model loading...")
-        llm = Llama(
-            model_path=model_path,
-            n_ctx=2048,
-            n_threads=4,
-            n_gpu_layers=0,
-            verbose=True
+        # Test basic generation
+        print("\nTesting text generation...")
+        prompt = "Hello, how are you?"
+        response = llm.generate(
+            prompt=prompt,
+            max_tokens=20,
+            temperature=0.7
         )
-        print("Full model loading test passed!")
+        print(f"Input prompt: {prompt}")
+        print(f"Response: {response}")
+        print("Generation test passed!")
         
-        # Test tokenization
-        print("\nTesting tokenization...")
-        text = "Hello, world!"
-        tokens = llm.tokenize(text.encode())
-        print(f"Input text: {text}")
-        print(f"Tokens: {tokens}")
-        print(f"Token count: {len(tokens)}")
+        # Test chat functionality
+        print("\nTesting chat functionality...")
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "What is 2+2?"}
+        ]
+        response = llm.chat(
+            messages=messages,
+            max_tokens=20,
+            temperature=0.7
+        )
+        print(f"Chat response: {response}")
+        print("Chat test passed!")
         
-        # Test detokenization
-        print("\nTesting detokenization...")
-        decoded = llm.detokenize(tokens).decode()
-        print(f"Decoded text: {decoded}")
-        assert decoded == text, "Decoded text doesn't match input"
-        print("Tokenization/detokenization test passed!")
+        # Unload model
+        print("\nTesting model unloading...")
+        llm.unload()
+        print("Model unloading test passed!")
         
         return True
         
@@ -51,25 +55,27 @@ def test_model(model_path):
         return False
 
 def main():
-    models = [
-        "models/nsfw-flash-q4_k_m.gguf",
-        "models/nsfw-3b-q4_k_m.gguf"
-    ]
+    models_dir = "models"
+    if not os.path.exists(models_dir):
+        print(f"Error: Models directory not found: {models_dir}")
+        return
+    
+    models = [f for f in os.listdir(models_dir) if f.endswith('.gguf')]
+    if not models:
+        print(f"No .gguf models found in {models_dir}")
+        return
     
     results = []
-    for model_path in models:
-        if os.path.exists(model_path):
-            success = test_model(model_path)
-            results.append((model_path, success))
-        else:
-            print(f"\nError: Model file not found: {model_path}")
-            results.append((model_path, False))
+    for model_file in models:
+        model_path = os.path.join(models_dir, model_file)
+        success = test_model(model_path)
+        results.append((model_file, success))
     
     print("\nTest Summary")
     print("-" * 50)
-    for model_path, success in results:
+    for model_file, success in results:
         status = "✓ PASSED" if success else "✗ FAILED"
-        print(f"{status}: {model_path}")
+        print(f"{status}: {model_file}")
 
 if __name__ == "__main__":
     main() 

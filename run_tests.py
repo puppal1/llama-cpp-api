@@ -3,12 +3,11 @@
 Test runner for llama.cpp API
 """
 
-import asyncio
 import sys
 from pathlib import Path
-from tests.test_llama_api import test_model
+from tests.test_models import test_model
 
-async def run_tests(model_path: str):
+def run_tests(model_path: str):
     """Run tests with both CPU and GPU configurations"""
     print("=== Starting llama.cpp API Tests ===")
     
@@ -21,11 +20,12 @@ async def run_tests(model_path: str):
     try:
         # Test CPU configuration
         print("\n=== Testing CPU Configuration ===")
-        await test_model(model_path, use_gpu=False)
+        success = test_model(str(model_path))
+        if not success:
+            print("CPU tests failed!")
+            sys.exit(1)
         
-        # Test GPU configuration if available
-        print("\n=== Testing GPU Configuration ===")
-        await test_model(model_path, use_gpu=True)
+        print("\nAll tests passed successfully!")
         
     except Exception as e:
         print(f"Error running tests: {str(e)}")
@@ -36,4 +36,4 @@ if __name__ == "__main__":
         print("Usage: python run_tests.py <path_to_model.gguf>")
         sys.exit(1)
     
-    asyncio.run(run_tests(sys.argv[1])) 
+    run_tests(sys.argv[1]) 

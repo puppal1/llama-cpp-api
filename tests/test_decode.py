@@ -5,7 +5,7 @@ from ctypes import c_int, c_float, c_char_p, c_void_p, POINTER, Structure, c_boo
 print("Testing llama.dll with llama_decode instead of llama_eval")
 
 # Load the DLL
-dll_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "llama.dll")
+dll_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "llama_cpp_api_package", "bin", "windows", "llamafile.exe")
 print(f"Loading llama.dll...")
 try:
     llama = ctypes.CDLL(dll_path)

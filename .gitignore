@@ -67,4 +67,41 @@ site/
 
 # Environment variables
 .env
-.env.* 
+.env.*
+
+# Binary files
+*.dll
+*.exe
+*.bin
+*.so
+*.dylib
+
+# Keep DLL directory structure
+!llama_cpp_api_package/bin/
+!llama_cpp_api_package/bin/windows/
+!llama_cpp_api_package/bin/linux/
+!llama_cpp_api_package/bin/macos/ 
+node_modules
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.dylib
+*.dll
+.pytest_cache/
+*.egg-info/
+
+# Virtual environment
+venv/
+env/
+
+# IDE files
+.vscode/
+.idea/
+
+# Node modules
+node_modules/

@@ -1,5 +1,5 @@
 """
-Core API for interacting with llama.cpp models using llama-cpp-python.
+Core model implementation for the llama.cpp API.
 """
 
 from typing import List, Optional, Dict, Any
