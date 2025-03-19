@@ -1,4 +1,5 @@
-from llama_cpp_api_package.llama_api import LlamaModel, ModelConfig
+from llama_cpp_api_package.llama_server import app, ModelManager
+from llama_cpp_api_package.llama_api import LlamaModel
 import pytest
 import os
 
@@ -44,16 +45,27 @@ except Exception as e:
     print(f"Error: {e}")
 
 def test_model_loading():
-    config = ModelConfig(
-        model_path="models/test.gguf",
-        n_ctx=2048,
-        n_threads=4,
-        n_gpu_layers=0
-    )
-    model = LlamaModel(config)
+    """Test that attempting to load a non-existent model raises an error"""
+    model = LlamaModel()
     
     try:
-        model.load()
-        assert model.status == "loaded"
+        model.load(
+            model_path="models/test.gguf",
+            n_ctx=2048,
+            n_threads=4,
+            n_gpu_layers=0
+        )
+        pytest.fail("Expected model loading to fail with non-existent model")
     except Exception as e:
-        assert "Failed to load model" in str(e) 
+        assert "Model path does not exist" in str(e)
+
+def test_model_methods():
+    """Test that methods raise appropriate errors when model is not loaded"""
+    model = LlamaModel()
+    
+    # Test that methods raise error when model is not loaded
+    with pytest.raises(RuntimeError, match="No model loaded"):
+        model.generate("test prompt")
+    
+    with pytest.raises(RuntimeError, match="No model loaded"):
+        model.chat([{"role": "user", "content": "test"}]) 
