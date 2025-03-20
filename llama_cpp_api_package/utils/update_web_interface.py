@@ -82,6 +82,6 @@ if __name__ == "__main__":
     print("\nUpdating web interface...")
     if update_index_html():
         print("\nSuccessfully updated the web interface!")
-        print("Start the server with: python llama_cpp_python.py")
+        print("Start the server with: python -m llama_cpp_api_package.llama_server")
     else:
         print("\nFailed to update the web interface.") 

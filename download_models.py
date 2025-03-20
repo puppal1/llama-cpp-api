@@ -45,7 +45,7 @@ def main():
         return 1
     
     print("\nSuggested next steps:")
-    print(f"1. Start the server: python llama_cpp_python.py")
+    print(f"1. Start the server: python -m llama_cpp_api_package.llama_server")
     print(f"2. Load the model through the API or web interface with ID: {args.filename.split('.')[0]}")
     print(f"   Model path: {args.filename}")
     
