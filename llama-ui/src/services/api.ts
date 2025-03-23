@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BASE_URL = 'http://localhost:8080';
+const BASE_URL = 'http://localhost:8000';
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -45,6 +45,17 @@ export interface AvailableModel {
   can_load: boolean;
 }
 
+export interface CpuInfo {
+  name: string;
+  cores: {
+    physical: number;
+    logical: number;
+  };
+  frequency?: string;
+  architecture: string;
+  utilization: number;
+}
+
 export interface GpuInfo {
   available: boolean;
   status: string;
@@ -62,18 +73,38 @@ export interface GpuInfo {
   power_watts?: number;
 }
 
+export interface MemoryInfo {
+    total_gb: number;
+    used_gb: number;
+    model_memory_gb: number;
+}
+
+export interface SystemState {
+    cpu: CpuInfo;
+    memory: MemoryInfo;
+    gpu: GpuInfo;
+}
+
 export interface ModelsResponse {
   models: {
-    available: AvailableModel[];
-    loaded: Record<string, LoadedModel>;
+    available: Array<{
+      id: string;
+      name: string;
+      path: string;
+      size_mb: number;
+      required_memory_mb: number;
+      can_load: boolean;
+    }>;
+    loaded: Record<string, {
+      status: string;
+      load_time?: string;
+      last_used?: string;
+      parameters?: ModelParameters;
+      memory_used_mb?: number;
+      error?: string;
+    }>;
   };
-  system_state: {
-    memory: {
-      total_gb: number;
-      used_gb: number;
-    };
-    gpu: GpuInfo;
-  };
+  system_state: SystemState;
 }
 
 export interface ChatMessage {
@@ -98,13 +129,35 @@ export interface ChatResponse {
 }
 
 export const modelApi = {
-  getModels: () => api.get<ModelsResponse>('/api/models').then(res => res.data),
+  getModels: async () => {
+    try {
+      const res = await api.get<ModelsResponse>('/api/models');
+      return res.data;
+    } catch (error) {
+      console.error('Failed to fetch models:', error);
+      throw new Error('Failed to fetch model information');
+    }
+  },
   
-  loadModel: (modelId: string, parameters: ModelParameters) => 
-    api.post(`/api/models/${encodeURIComponent(modelId)}/load`, { parameters }),
+  loadModel: async (modelId: string, parameters: ModelParameters) => {
+    try {
+      const res = await api.post(`/api/models/${encodeURIComponent(modelId)}/load`, { parameters });
+      return res.data;
+    } catch (error: any) {
+      console.error('Failed to load model:', error);
+      throw new Error(error.response?.data?.detail || 'Failed to load model');
+    }
+  },
   
-  unloadModel: (modelId: string) => 
-    api.post(`/api/models/${encodeURIComponent(modelId)}/unload`),
+  unloadModel: async (modelId: string) => {
+    try {
+      const res = await api.post(`/api/models/${encodeURIComponent(modelId)}/unload`);
+      return res.data;
+    } catch (error: any) {
+      console.error('Failed to unload model:', error);
+      throw new Error(error.response?.data?.detail || 'Failed to unload model');
+    }
+  },
 };
 
 export const chatApi = {

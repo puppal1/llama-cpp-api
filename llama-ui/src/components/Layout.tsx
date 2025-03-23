@@ -2,7 +2,6 @@ import { Box, Container, Tab, Tabs } from '@mui/material';
 import { useState } from 'react';
 import ModelManager from './ModelManager';
 import Chat from './Chat';
-import SystemMetrics from './SystemMetrics';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -43,7 +42,6 @@ function Layout() {
         <Tabs value={tabValue} onChange={handleChange} aria-label="basic tabs">
           <Tab label="Models" />
           <Tab label="Chat" />
-          <Tab label="System" />
         </Tabs>
       </Box>
       <TabPanel value={tabValue} index={0}>
@@ -51,9 +49,6 @@ function Layout() {
       </TabPanel>
       <TabPanel value={tabValue} index={1}>
         <Chat />
-      </TabPanel>
-      <TabPanel value={tabValue} index={2}>
-        <SystemMetrics />
       </TabPanel>
     </Container>
   );

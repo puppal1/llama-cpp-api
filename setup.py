@@ -21,49 +21,15 @@ except Exception as e:
     long_description = "A web interface for llama.cpp models"
 
 setup(
-    name="llama_cpp_api",
-    version="0.1.0",
+    name="llama_cpp_api_package",
+    version="0.1",
     packages=find_packages(),
-    include_package_data=True,
     install_requires=[
-        "fastapi>=0.68.0",
-        "uvicorn>=0.15.0",
-        "python-multipart>=0.0.5",
-        "psutil>=5.8.0",
-        "numpy>=1.21.0",
-        "pydantic>=1.8.0",
+        "fastapi",
+        "uvicorn",
+        "llama-cpp-python",
+        "psutil",
+        "pytest",
+        "httpx"
     ],
-    package_data={
-        'llama_cpp_api_package': [
-            'static/css/*',
-            'static/js/*',
-            'static/index.html',
-            'models/*.gguf',
-            f'bin/{platform.system().lower()}/*'  # OS-specific binaries
-        ]
-    },
-    entry_points={
-        'console_scripts': [
-            'llama-cpp-api=llama_cpp_api_package.run:main',
-        ],
-    },
-    author="Your Name",
-    author_email="your.email@example.com",
-    description="A web interface for llama.cpp models",
-    long_description=long_description,
-    long_description_content_type="text/markdown",
-    keywords="llama, machine learning, api",
-    url="https://github.com/yourusername/llama_cpp_api",
-    classifiers=[
-        "Development Status :: 3 - Alpha",
-        "Intended Audience :: Developers",
-        "License :: OSI Approved :: MIT License",
-        "Operating System :: OS Independent",
-        "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
-        "Programming Language :: Python :: 3.10",
-        "Programming Language :: Python :: 3.13",  # Added Python 3.13 support
-    ],
-    python_requires=">=3.8",
 ) 
