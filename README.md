@@ -138,7 +138,7 @@ POST http://localhost:8000/api/v2/models/{model_id}/load
 
 3. Chat with a loaded model:
 ```
-POST http://localhost:8000/api/v2/models/{model_id}/chat
+POST http://localhost:8000/api/v2/chat/{model_id}
 ```
 
 4. Unload a model:
@@ -205,7 +205,7 @@ The API allows you to configure:
 - `GET /api/v2/models/{model_id}`: Get model information
 - `POST /api/v2/models/{model_id}/load`: Load a specific model
 - `POST /api/v2/models/{model_id}/unload`: Unload a model
-- `POST /api/v2/models/{model_id}/chat`: Chat with a model
+- `POST /api/v2/chat/{model_id}`: Chat with a model
 - `GET /api/v2/metrics`: Get system metrics and loaded models
 
 > **Note**: For security reasons, model paths are not included in the API responses.
@@ -223,7 +223,7 @@ curl -X POST "http://localhost:8000/api/v2/models/mistral-7b-instruct-v0.2.Q4_K_
 
 #### Example: Using the Chat Endpoint
 ```bash
-curl -X POST "http://localhost:8000/api/v2/models/mistral-7b-instruct-v0.2.Q4_K_M.gguf/chat" \
+curl -X POST "http://localhost:8000/api/v2/chat/mistral-7b-instruct-v0.2.Q4_K_M.gguf" \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [
@@ -261,7 +261,7 @@ print(f"Load response: {load_response.json()}")
 
 # Chat with model
 chat_response = requests.post(
-    f"{API_BASE}/models/{model_name}/chat",
+    f"{API_BASE}/chat/{model_name}",
     json={
         "messages": [
             {"role": "user", "content": "Write a short poem about AI"}
