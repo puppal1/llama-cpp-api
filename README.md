@@ -44,13 +44,11 @@ A web interface for interacting with LLaMA models using llama.cpp. This project 
 
 - 🌐 Web-based interface for model interaction
 - 🔄 Real-time model loading and unloading
-- 📊 Performance monitoring (CPU, Memory, GPU usage)
+- 📊 Performance monitoring (CPU, Memory usage)
 - ⚙️ Configurable model parameters
-- 🔧 Support for multiple models
+- 🔧 Support for multiple models including MOE models
 - 💻 Cross-platform support (Windows, Linux, macOS)
 - 🔍 API Documentation interface
-- 🎨 Dark theme with customizable UI
-- 📈 Real-time system metrics
 - 🚀 Streaming responses support
 - 🛠️ Advanced parameter configuration
 
@@ -75,439 +73,192 @@ python -m venv venv
 source venv/bin/activate
 ```
 
-3. Install the package and dependencies:
+3. Install the requirements:
 ```bash
-pip install -e .
 pip install -r requirements.txt
 ```
 
-### 2. Building llama.cpp
+### 2. Model Setup
+
+1. Create a models directory if it doesn't exist:
+```bash
+mkdir -p models
+```
+
+2. Place your GGUF model files in the models directory. Supported models include:
+   - Mistral-7B-Instruct (e.g., mistral-7b-instruct-v0.2.Q4_K_M.gguf)
+   - Ayla Light (e.g., Ayla-Light-12B-v2.Q4_K_M.gguf)
+   - DeepSeek models (e.g., DeepSeek-R1-Distill-Qwen-14B-Uncensored.Q4_K_S.gguf)
+   - MOE models (e.g., M-MOE-4X7B-Dark-MultiVerse-UC-E32-24B-max-cpu-D_AU-Q2_k.gguf)
+   - WizardLM (e.g., WizardLM-7B-uncensored.Q8_0.gguf)
+
+### 3. Starting the Server
 
 #### Windows
 ```bash
-# Clone llama.cpp
-git clone https://github.com/ggerganov/llama.cpp
-cd llama.cpp
+# Start the server with default port 8000
+.\start_server.bat
 
-# Create build directory
-mkdir build
-cd build
-
-# Configure with CMake (important: use -DBUILD_SHARED_LIBS=ON)
-cmake .. -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
-
-# Build
-cmake --build . --config Release
-
-# Create directories and copy the DLLs
-mkdir -p ..\..\llama_cpp_api_package\bin\windows
-copy Release\*.dll ..\..\llama_cpp_api_package\bin\windows\
-cd ..\..
+# Or specify a custom port
+.\start_server.bat 8080
 ```
 
-#### Linux
+#### Linux/macOS
 ```bash
-# Clone llama.cpp
-git clone https://github.com/ggerganov/llama.cpp
-cd llama.cpp
+# Make the script executable
+chmod +x start_server.sh
 
-# Create build directory
-mkdir build && cd build
-
-# Configure with CMake (important: use -DBUILD_SHARED_LIBS=ON)
-cmake .. -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
-
-# Build
-make -j$(nproc)
-
-# Create directories and copy libraries
-mkdir -p ../../llama_cpp_api_package/bin/linux
-cp lib*.so ../../llama_cpp_api_package/bin/linux/
-cd ../..
+# Start the server
+./start_server.sh
 ```
 
-#### macOS
-```bash
-# Clone llama.cpp
-git clone https://github.com/ggerganov/llama.cpp
-cd llama.cpp
+The server will start at `http://localhost:8000/` and the API will be available at `http://localhost:8000/api/v2/models`.
 
-# Create build directory
-mkdir build && cd build
+### 4. Using the API
 
-# Configure with CMake (important: use -DBUILD_SHARED_LIBS=ON)
-cmake .. -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
+Once the server is running, you can interact with it using the API:
 
-# Build
-make -j$(sysctl -n hw.ncpu)
-
-# Create directories and copy libraries
-mkdir -p ../../llama_cpp_api_package/bin/macos
-cp lib*.dylib ../../llama_cpp_api_package/bin/macos/
-cd ../..
+1. List available models:
+```
+GET http://localhost:8000/api/v2/models
 ```
 
-### 3. Verify Installation
-
-After building and copying the libraries, verify the setup:
-
-```bash
-# Windows
-python tests/test_dll.py
+2. Load a model:
+```
+POST http://localhost:8000/api/v2/models/{model_filename}/load
 ```
 
-The test should show available functions and confirm successful loading of the library. Expected output should show key functions like:
-- llama_decode
-- llama_encode
-- llama_model_load_from_file
-- llama_init_from_model
-- llama_tokenize
-
-### 4. Run Model Tests
-
-To verify model functionality:
-
-```bash
-# Test with a specific model
-python run_tests.py models/your-model.gguf
-
-# Example with Mistral model
-python run_tests.py models/mistral-7b-instruct-v0.2.Q4_K_M.gguf
+3. Chat with a loaded model:
+```
+POST http://localhost:8000/api/v2/models/{model_filename}/chat
 ```
 
-The tests will verify:
-- Model loading/unloading
-- Basic text generation
-- Chat functionality
-- Memory management
-
-### 5. Starting the Servers
-
-#### Backend Server
-Start the backend API server using one of these methods:
-
-```bash
-# Method 1: Using llama_server.py directly (recommended for development)
-python llama_cpp_api_package/llama_server.py
-
-# Method 2: Using run.py
-python run.py server --host 0.0.0.0 --port 8080
+4. Unload a model:
+```
+POST http://localhost:8000/api/v2/models/{model_filename}/unload
 ```
 
-The backend server will start at `http://localhost:8080`
+## Model Compatibility
 
-You can verify the server is running by checking:
-```bash
-# Check server status
-curl http://localhost:8080/api/metrics
-```
+Different models may use varying RoPE (Rotary Position Embedding) configurations. The server automatically detects and applies the appropriate settings for:
 
-#### Frontend Server
-1. Navigate to the UI directory:
-```bash
-cd llama-ui
-```
-
-2. Install dependencies (first time only):
-```bash
-npm install
-```
-
-3. Start the development server:
-```bash
-npm run dev
-```
-
-The frontend will be available at `http://localhost:3000`
-
-#### Environment Variables
-
-1. Backend environment variables (create a `.env` file in the root directory):
-```env
-LLAMA_API_HOST=0.0.0.0
-LLAMA_API_PORT=8080
-LLAMA_MODEL_PATH=./models
-LLAMA_NUM_THREADS=4
-LLAMA_GPU_LAYERS=0
-LLAMA_DEBUG=1
-```
-
-2. Frontend environment variables (create a `.env` file in the `llama-ui` directory):
-```env
-VITE_API_URL=http://localhost:8080
-VITE_WS_URL=ws://localhost:8080
-```
-
-### Troubleshooting
-
-1. If you see deprecation warnings about `on_event` when starting the server:
-```
-DeprecationWarning: on_event is deprecated, use lifespan event handlers instead.
-```
-These warnings can be safely ignored for now. They're related to FastAPI's event handling and don't affect functionality.
-
-2. If the backend server doesn't start:
-   - Check if port 8080 is already in use
-   - Try running the server directly using `llama_server.py`
-   - Verify all DLLs are in the correct location (`llama_cpp_api_package/bin/windows/`)
-
-3. If the frontend server doesn't start:
-   - Verify you're in the `llama-ui` directory
-   - Check if `node_modules` exists, if not run `npm install`
-   - Try a different port if 3000 is in use
-
-4. If model tests fail:
-   - Verify the model file exists and is not corrupted
-   - Check system memory availability
-   - Ensure DLLs are properly loaded (run `test_dll.py` first)
-
-### Model Compatibility
-
-#### RoPE Parameters and Model Architecture
-
-Different models may use varying RoPE (Rotary Position Embedding) configurations. Here's what you need to know:
-
-1. **Standard Models**
-   - Most models use standard RoPE configurations
+1. **Standard Models** (Mistral, WizardLM)
    - Default parameters work out of the box
-   - Examples: Mistral, WizardLM
 
-2. **Custom/Hybrid Models**
-   - Some models use non-standard RoPE dimensions
-   - May require specific configuration
-   - Examples: Ayla, MOE models
+2. **Ayla Models**
+   - Uses 128 RoPE dimensions
+   - Automatically configured with appropriate RoPE parameters
 
-#### Known Model-Specific Configurations
+3. **DeepSeek Models**
+   - Successfully runs with context window support
 
-1. **Ayla Models**
-   - Uses 128 RoPE dimensions (non-standard)
-   - Requires custom configuration:
-   ```python
-   {
-       "rope_dimension_count": 128,
-       "rope_freq_base": 1000000.0,
-       "n_ctx": 2048
-   }
-   ```
+4. **MOE Models**
+   - Mixture of Experts models are supported
+   - Expert routing is handled automatically
 
-2. **DeepSeek Models**
-   - Successfully runs with default configuration
-   - Optimal parameters:
-   ```python
-   {
-       "rope_freq_base": 10000.0,
-       "rope_scaling_type": "linear",
-       "n_ctx": 4096
-   }
-   ```
+## Troubleshooting
 
-3. **MOE Models**
-   - May require specific tensor configurations
-   - Recommended settings:
-   ```python
-   {
-       "n_threads": 4,
-       "n_batch": 256,
-       "n_gpu_layers": 0
-   }
-   ```
+1. If a model fails to load:
+   - Check if the model file exists and is not corrupted
+   - Verify sufficient RAM is available (models can be large)
 
-#### Testing Model Compatibility
+2. If you see RoPE-related errors:
+   - The server should automatically detect the correct RoPE parameters
+   - If issues persist, check the model metadata
 
-To test if your model is compatible:
+3. For best performance:
+   - Use quantized models (Q4_K_M, Q5_K_S etc.)
+   - Adjust the number of threads based on your CPU
 
-```bash
-# Test specific model configuration
-python llama_cpp_api_package/test_models.py --model path/to/your/model.gguf
+## Environment Variables
 
-# View model metadata
-python read_gguf_metadata.py path/to/your/model.gguf
-```
-
-#### Troubleshooting Model Issues
-
-1. **RoPE Dimension Mismatch**
-   - Error: "invalid n_rot: X, expected Y"
-   - Solution: Use model-specific configuration with correct RoPE dimensions
-
-2. **Memory Issues**
-   - Error: "Failed to load model: insufficient memory"
-   - Solution: Reduce batch size or context length, or try quantized versions
-
-3. **Tensor Type Errors**
-   - Error: "GGML_ASSERT: ..."
-   - Solution: Check model compatibility and quantization format
-
-For detailed logs and debugging:
-```bash
-export LLAMA_DEBUG=1
-python llama_cpp_api_package/test_models.py --verbose
-```
+- `MODELS_DIR`: Custom path to look for models
+- `SERVER_PORT`: Custom port (can also be set via command line)
 
 ## Configuration
 
 ### Model Parameters
-The web interface allows you to configure:
-- Context window size (num_ctx): Controls the context length
-- Batch size (num_batch): Affects processing speed
-- Temperature: Controls response creativity
+The API allows you to configure:
+- Context window size: Controls the context length for the model
+- Batch size: Affects processing speed and memory usage
+- Temperature: Controls response creativity (0.0-1.0)
 - Top-K sampling: Filters vocabulary choices
 - Top-P sampling: Controls response diversity
-- Min-P: Alternative to top-p for quality/variety balance
 - Repeat penalty: Prevents repetitive responses
 - Number of threads: CPU thread utilization
-- Memory locking: Improves performance
-- Random seed: Ensures reproducible responses
-- Maximum tokens: Controls response length
-- Mirostat settings: Advanced sampling control
+- Stop sequences: Custom sequences to stop generation
 
-### Environment Variables
-- `LLAMA_API_HOST`: Host to bind the server (default: 0.0.0.0)
-- `LLAMA_API_PORT`: Port to run the server (default: 8080)
-- `LLAMA_MODEL_PATH`: Default path to look for models
-- `LLAMA_NUM_THREADS`: Default number of CPU threads to use
-- `LLAMA_GPU_LAYERS`: Number of layers to offload to GPU (if available)
-- `LLAMA_DEBUG`: Enable debug logging (set to 1)
+### API Endpoints
 
-## API Endpoints
+#### Models API (v2)
+- `GET /api/v2/models`: List all available models
+- `GET /api/v2/models/{model_id}`: Get model information
+- `POST /api/v2/models/{model_id}/load`: Load a specific model
+- `POST /api/v2/models/{model_id}/unload`: Unload a model
+- `POST /api/v2/models/{model_id}/chat`: Chat with a model
+- `GET /api/v2/metrics`: Get system metrics and loaded models
 
-### Available Endpoints
-- `GET /api/models`: List available models
-- `POST /api/models/{model_id}/load`: Load a model
-- `POST /api/models/{model_id}/unload`: Unload a model
-- `POST /api/models/{model_id}/chat`: Chat with a model
-- `GET /api/metrics`: Get system metrics
+#### Example: Loading a Model
+```bash
+curl -X POST "http://localhost:8000/api/v2/models/mistral-7b-instruct-v0.2.Q4_K_M.gguf/load" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "num_threads": 4,
+    "num_batch": 512,
+    "mlock": true
+  }'
+```
 
-Detailed API documentation is available in the web interface under the "API Documentation" tab.
+#### Example: Using the Chat Endpoint
+```bash
+curl -X POST "http://localhost:8000/api/v2/models/mistral-7b-instruct-v0.2.Q4_K_M.gguf/chat" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "Tell me about the llama animal."}
+    ],
+    "temperature": 0.7,
+    "max_tokens": 500
+  }'
+```
 
 ## Advanced Usage
 
-### API Integration
-You can integrate the API into your Python projects:
+### Python Integration
+You can use the API in your Python applications:
 
 ```python
-from llama_api import LlamaModel
+import requests
+import json
 
-# Initialize the model
-model = LlamaModel()
+API_BASE = "http://localhost:8000/api/v2"
+
+# List available models
+response = requests.get(f"{API_BASE}/models")
+models = response.json()
+print(f"Available models: {models}")
 
 # Load a model
-model.load(
-    model_path="models/your-model.gguf",
-    n_ctx=2048,
-    n_gpu_layers=0  # Set to higher value for GPU acceleration
+model_name = "mistral-7b-instruct-v0.2.Q4_K_M.gguf"
+load_response = requests.post(
+    f"{API_BASE}/models/{model_name}/load",
+    json={"num_threads": 4}
 )
+print(f"Load response: {load_response.json()}")
 
-# Generate a response
-response = model.generate(
-    prompt="Hello, how are you?",
-    max_tokens=100,
-    temperature=0.7
+# Chat with model
+chat_response = requests.post(
+    f"{API_BASE}/models/{model_name}/chat",
+    json={
+        "messages": [
+            {"role": "user", "content": "Write a short poem about AI"}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 500
+    }
 )
-
-print(response)
-
-# Unload the model when done
-model.unload()
-```
-
-### Useful Commands
-
-- List available models:
-```bash
-python run.py list
-```
-
-- Update web interface:
-```bash
-python run.py update
-```
-
-- Check system status:
-```bash
-python run.py status
-```
-
-- Monitor logs:
-```bash
-python run.py logs
-```
-
-### Troubleshooting
-
-1. If the server fails to start:
-   - Check if the required libraries are in the correct location
-   - Verify port 8080 is not in use
-   - Check system logs for errors
-
-2. If a model fails to load:
-   - Verify sufficient RAM is available
-   - Check model file integrity
-   - Ensure correct model path
-
-3. GPU-related issues:
-   - Verify CUDA installation (if using GPU)
-   - Check GPU memory availability
-   - Update GPU drivers
-
-### Docker Deployment
-
-```dockerfile
-FROM python:3.9-slim
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    cmake \
-    git
-
-# Clone and build llama.cpp
-RUN git clone https://github.com/ggerganov/llama.cpp && \
-    cd llama.cpp && \
-    make
-
-# Install the package
-COPY . /app
-WORKDIR /app
-RUN pip install -e .
-
-# Copy llama.cpp libraries
-RUN cp /llama.cpp/libllama.so /app/llama_cpp_api_package/bin/linux/ && \
-    cp /llama.cpp/libggml*.so /app/llama_cpp_api_package/bin/linux/
-
-EXPOSE 8080
-CMD ["llama-cpp-api", "--host", "0.0.0.0", "--port", "8080"]
-```
-
-### Kubernetes Deployment
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: llama-cpp-api
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: llama-cpp-api
-  template:
-    metadata:
-      labels:
-        app: llama-cpp-api
-    spec:
-      containers:
-      - name: llama-cpp-api
-        image: your-registry/llama-cpp-api:latest
-        ports:
-        - containerPort: 8080
-        volumeMounts:
-        - name: models
-          mountPath: /app/llama_cpp_api_package/models
-      volumes:
-      - name: models
-        persistentVolumeClaim:
-          claimName: models-pvc
+print(chat_response.json()["response"])
 ```
 
 ## Contributing
