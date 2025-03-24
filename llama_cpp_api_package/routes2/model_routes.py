@@ -95,6 +95,10 @@ async def list_available_models():
                     is_loaded = True
                 elif model["metadata"].get("load_time") is not None:
                     is_loaded = True
+                
+                # Remove path from metadata if it exists
+                if "path" in model["metadata"]:
+                    model["metadata"].pop("path")
             
             logger.debug(f"Model {model['id']} loaded status: {is_loaded}")
             
@@ -291,4 +295,70 @@ async def unload_model(model_id: str):
         raise
     except Exception as e:
         logger.error(f"Error unloading model: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{model_id}/chat")
+async def chat_with_model(model_id: str, request: Dict = Body(...)):
+    """Chat with a loaded model."""
+    try:
+        # Ensure model_id has .gguf extension
+        if not model_id.endswith(".gguf"):
+            model_id = f"{model_id}.gguf"
+            
+        logger.info(f"Chat request for model: {model_id}")
+        
+        # Check if model exists and is loaded
+        if model_id not in _known_models:
+            logger.error(f"Model not found in known models: {model_id}")
+            raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
+        
+        # Get model metadata
+        metadata = get_model_metadata(model_id)
+        if not metadata:
+            logger.error(f"Model metadata not found for {model_id}")
+            raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
+            
+        # Verify model is loaded
+        if not metadata.get("loaded", False):
+            logger.error(f"Model {model_id} is not loaded")
+            raise HTTPException(status_code=400, detail=f"Model {model_id} is not loaded. Please load the model first.")
+        
+        # Extract chat parameters
+        messages = request.get("messages", [])
+        if not messages:
+            raise HTTPException(status_code=400, detail="No messages provided")
+            
+        temperature = request.get("temperature", 0.7)
+        max_tokens = request.get("max_tokens", 100)
+        
+        # Remove .gguf extension for the model manager
+        model_id_without_ext = model_id.replace(".gguf", "")
+        
+        # Generate response using model manager
+        try:
+            response = await model_manager.chat(
+                model_id=model_id_without_ext,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            
+            return {
+                "model": model_id,
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": response
+                    }
+                }]
+            }
+            
+        except Exception as e:
+            logger.error(f"Error generating chat response: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=str(e))
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in chat endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e)) 

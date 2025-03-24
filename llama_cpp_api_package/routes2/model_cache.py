@@ -246,7 +246,13 @@ def get_model_metadata(model_id: str) -> Optional[Dict]:
     """Pure read operation - returns cached metadata."""
     # Convert model_id to filename for cache lookup
     filename = _get_filename_from_model_id(model_id)
-    return _model_metadata_cache.get(filename)
+    metadata = _model_metadata_cache.get(filename)
+    
+    # Remove path from metadata if it exists
+    if metadata and 'path' in metadata:
+        metadata = {k: v for k, v in metadata.items() if k != 'path'}
+        
+    return metadata
 
 def get_model_size_cached(model_id: str) -> Optional[int]:
     """Pure read operation - returns cached size."""
@@ -269,9 +275,13 @@ def list_models(models_dir: str) -> List[Dict]:
         models = []
         for filename, metadata in _model_metadata_cache.items():
             model_id = _get_model_id_from_filename(filename)
+            
+            # Create a copy of metadata without the path
+            metadata_clean = {k: v for k, v in metadata.items() if k != 'path'}
+            
             model_info = {
                 "id": model_id,
-                "metadata": metadata,
+                "metadata": metadata_clean,
                 "size": _model_size_cache.get(filename)
             }
             models.append(model_info)
