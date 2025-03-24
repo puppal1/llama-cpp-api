@@ -92,7 +92,7 @@ mkdir -p models
    - MOE models (e.g., M-MOE-4X7B-Dark-MultiVerse-UC-E32-24B-max-cpu-D_AU-Q2_k.gguf)
    - WizardLM (e.g., WizardLM-7B-uncensored.Q8_0.gguf)
 
-### 3. Starting the Server
+### 3. Starting and Managing the Server
 
 #### Windows
 ```bash
@@ -115,10 +115,26 @@ chmod +x server.sh
 ./server.sh 8080
 ```
 
-The server will automatically:
-- Check for any existing server on the specified port and stop it
+The server scripts automatically:
+- Check for any existing server on the specified port and stop it if running
 - Set up the environment and models directory
 - Start a new server instance
+
+#### Managing the Server
+
+The consolidated server scripts handle starting, stopping, and restarting operations:
+
+1. **To stop a running server:**
+   - On Windows: Press Ctrl+C in the terminal window running the server
+   - On Linux/macOS: Press Ctrl+C in the terminal window running the server
+   - Alternatively, start the script again and it will detect and stop any existing server on the same port
+
+2. **To restart a server:**
+   - Simply run the server script again - it will automatically stop any existing server on the specified port and start a new one
+
+3. **To check if a server is running:**
+   - On Windows: `netstat -ano | findstr ":8000"` (replace 8000 with your port)
+   - On Linux/macOS: `lsof -i :8000` (replace 8000 with your port)
 
 The server will be available at `http://localhost:8000/` (or your custom port) and the API will be accessible at `http://localhost:8000/api/v2/models`.
 
