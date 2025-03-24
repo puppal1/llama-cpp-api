@@ -97,22 +97,30 @@ mkdir -p models
 #### Windows
 ```bash
 # Start the server with default port 8000
-.\start_server.bat
+.\server.bat
 
 # Or specify a custom port
-.\start_server.bat 8080
+.\server.bat 8080
 ```
 
 #### Linux/macOS
 ```bash
 # Make the script executable
-chmod +x start_server.sh
+chmod +x server.sh
 
-# Start the server
-./start_server.sh
+# Start the server with default port 8000
+./server.sh
+
+# Or specify a custom port
+./server.sh 8080
 ```
 
-The server will start at `http://localhost:8000/` and the API will be available at `http://localhost:8000/api/v2/models`.
+The server will automatically:
+- Check for any existing server on the specified port and stop it
+- Set up the environment and models directory
+- Start a new server instance
+
+The server will be available at `http://localhost:8000/` (or your custom port) and the API will be accessible at `http://localhost:8000/api/v2/models`.
 
 ### 4. Using the API
 
@@ -125,18 +133,20 @@ GET http://localhost:8000/api/v2/models
 
 2. Load a model:
 ```
-POST http://localhost:8000/api/v2/models/{model_filename}/load
+POST http://localhost:8000/api/v2/models/{model_id}/load
 ```
 
 3. Chat with a loaded model:
 ```
-POST http://localhost:8000/api/v2/models/{model_filename}/chat
+POST http://localhost:8000/api/v2/models/{model_id}/chat
 ```
 
 4. Unload a model:
 ```
-POST http://localhost:8000/api/v2/models/{model_filename}/unload
+POST http://localhost:8000/api/v2/models/{model_id}/unload
 ```
+
+Note: For `model_id`, you can use either the filename with or without the .gguf extension (e.g., "mistral-7b-instruct-v0.2" or "mistral-7b-instruct-v0.2.gguf").
 
 ## Model Compatibility
 
@@ -197,6 +207,8 @@ The API allows you to configure:
 - `POST /api/v2/models/{model_id}/unload`: Unload a model
 - `POST /api/v2/models/{model_id}/chat`: Chat with a model
 - `GET /api/v2/metrics`: Get system metrics and loaded models
+
+> **Note**: For security reasons, model paths are not included in the API responses.
 
 #### Example: Loading a Model
 ```bash
