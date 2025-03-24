@@ -45,21 +45,25 @@ async def chat_with_model(
 ):
     """Chat with a specific model"""
     try:
-        if model_id not in model_manager.models:
+        # Get model info using model manager methods
+        model_info = model_manager.get_model_info(model_id)
+        if not model_info:
             raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
             
-        model_info = model_manager.models[model_id]
-        if model_info.status != ModelStatus.LOADED:
+        model_status = model_manager.get_model_status(model_id)
+        if model_status != ModelStatus.LOADED:
             raise HTTPException(
                 status_code=400,
-                detail=f"Model {model_id} is not ready (status: {model_info.status})"
+                detail=f"Model {model_id} is not ready (status: {model_status})"
             )
             
-        # Update last used timestamp
-        background_tasks.add_task(model_info.update_last_used)
-        
         # Generate response
-        response = await model_info.generate(request)
+        response = await model_manager.chat(
+            model_id=model_id,
+            messages=request.messages,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature
+        )
         
         if request.stream:
             return StreamingResponse(

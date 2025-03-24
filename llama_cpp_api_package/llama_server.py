@@ -3,14 +3,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 import os
+from pathlib import Path
 import json
 from typing import Dict, Any, Optional, List
 from llama_cpp import Llama
 import logging
+from .routes2.model_routes import router as v2_model_router
+from .routes2.metrics_routes import router as v2_metrics_router
+from .routes2.model_cache import initialize_cache
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Get the absolute path to the models directory
+MODELS_DIR = Path(__file__).parent.parent / "models"
+if not MODELS_DIR.exists():
+    # If models directory doesn't exist at parent.parent, try current directory
+    MODELS_DIR = Path.cwd() / "models"
 
 app = FastAPI()
 
@@ -22,6 +32,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include v2 routers
+app.include_router(v2_model_router, prefix="/api/v2")
+app.include_router(v2_metrics_router, prefix="/api/v2")
+
+# Initialize model cache at startup
+models_dir = os.getenv("MODELS_DIR", str(MODELS_DIR))
+initialize_cache(models_dir)
 
 # Global model storage
 loaded_models: Dict[str, Llama] = {}
@@ -82,7 +100,8 @@ def get_model_config(model_name: str, metadata: Dict[str, Any]) -> ModelConfig:
 async def load_model(model_name: str, config: Optional[ModelConfig] = None):
     """Load a model with specified configuration."""
     try:
-        model_path = f"models/{model_name}"
+        models_dir = os.path.abspath(os.getenv("MODELS_DIR", "models"))
+        model_path = os.path.join(models_dir, model_name)
         if not os.path.exists(model_path):
             raise HTTPException(status_code=404, detail=f"Model file not found: {model_name}")
         

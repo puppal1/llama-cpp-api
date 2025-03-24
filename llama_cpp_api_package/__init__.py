@@ -5,7 +5,6 @@ A self-contained API for interacting with llama.cpp models.
 """
 
 # Package initialization
-from .main import app
 from .models.model_manager import ModelManager
 from .api.api_types import ModelStatus
 from .models.model_types import ModelParameters

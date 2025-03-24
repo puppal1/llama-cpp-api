@@ -63,7 +63,7 @@ def get_model_config(model_name: str, metadata: Dict[str, Any]) -> Dict[str, Any
         config.update({
             "rope_dimension_count": rope_dims or 128,  # Use metadata or fallback to 128
             "rope_freq_base": 1000000.0,
-            "n_ctx": 2048,
+            "n_ctx": metadata.get("context_length", 100000),  # Use metadata context length or default to 100k
             "tensor_split": None
         })
     elif "deepseek" in model_name.lower():

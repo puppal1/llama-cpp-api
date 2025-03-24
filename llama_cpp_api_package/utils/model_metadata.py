@@ -11,6 +11,9 @@ from datetime import datetime
 from llama_cpp import Llama
 from llama_cpp_api_package.config.model_config import ModelArchitectures
 import requests
+import re
+from io import StringIO
+from contextlib import redirect_stderr
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -20,6 +23,8 @@ RELEVANT_METADATA_KEYS = {
     # General model info
     'general.architecture',
     'general.name',
+    'general.model_type',
+    'general.model_name',
     
     # Common model architecture fields
     'llama.context_length',
@@ -33,6 +38,10 @@ RELEVANT_METADATA_KEYS = {
     'llama.attention.head_count_kv',
     'llama.attention.layer_norm_rms_epsilon',
     'llama.rope.orig_ctx',
+    'llama.vocab_size',
+    'llama.num_layers',
+    'llama.num_heads',
+    'llama.num_heads_kv',
     
     # Qwen specific fields
     'qwen2.context_length',
@@ -46,6 +55,10 @@ RELEVANT_METADATA_KEYS = {
     'qwen2.attention.head_count_kv',
     'qwen2.attention.layer_norm_rms_epsilon',
     'qwen2.rope.orig_ctx',
+    'qwen2.vocab_size',
+    'qwen2.num_layers',
+    'qwen2.num_heads',
+    'qwen2.num_heads_kv',
     
     # Mistral specific fields
     'mistral.context_length',
@@ -59,6 +72,10 @@ RELEVANT_METADATA_KEYS = {
     'mistral.attention.head_count_kv',
     'mistral.attention.layer_norm_rms_epsilon',
     'mistral.rope.orig_ctx',
+    'mistral.vocab_size',
+    'mistral.num_layers',
+    'mistral.num_heads',
+    'mistral.num_heads_kv',
     
     # Yi specific fields
     'yi.context_length',
@@ -72,6 +89,10 @@ RELEVANT_METADATA_KEYS = {
     'yi.attention.head_count_kv',
     'yi.attention.layer_norm_rms_epsilon',
     'yi.rope.orig_ctx',
+    'yi.vocab_size',
+    'yi.num_layers',
+    'yi.num_heads',
+    'yi.num_heads_kv',
     
     # Phi-2 specific fields
     'phi2.context_length',
@@ -85,6 +106,10 @@ RELEVANT_METADATA_KEYS = {
     'phi2.attention.head_count_kv',
     'phi2.attention.layer_norm_rms_epsilon',
     'phi2.rope.orig_ctx',
+    'phi2.vocab_size',
+    'phi2.num_layers',
+    'phi2.num_heads',
+    'phi2.num_heads_kv',
     
     # Generic fields that might be present
     'rope.dimension_count',
@@ -97,7 +122,13 @@ RELEVANT_METADATA_KEYS = {
     'context_length',
     'embedding_length',
     'block_count',
-    'head_count'
+    'head_count',
+    'vocab_size',
+    'num_layers',
+    'num_heads',
+    'num_heads_kv',
+    'model_type',
+    'model_name'
 }
 
 # Skip these keys that contain large arrays or unnecessary data
@@ -557,4 +588,81 @@ class ModelMetadataCache:
         return False
 
 # Global instance
-metadata_cache = ModelMetadataCache() 
+metadata_cache = ModelMetadataCache()
+
+class ModelMetadataReader:
+    """Enhanced model metadata reader based on test_moe_ayla.py implementation"""
+    
+    PARAM_PATTERNS = {
+        'architecture': r'arch\s*=\s*(\w+)',
+        'num_layers': r'n_layer\s*=\s*(\d+)',
+        'num_heads': r'n_head\s*=\s*(\d+)',
+        'num_heads_kv': r'n_head_kv\s*=\s*(\d+)',
+        'embedding_length': r'n_embd\s*=\s*(\d+)',
+        'vocab_size': r'n_vocab\s*=\s*(\d+)',
+        'rope_dimension_count': r'n_rot\s*=\s*(\d+)',
+        'rope_freq_base': r'freq_base_train\s*=\s*(\d+\.\d+)',
+        'rope_scaling': r'rope scaling\s*=\s*(\w+)',
+        'context_length': r'n_ctx_train\s*=\s*(\d+)',
+        'model_type': r'model type\s*=\s*(.+)',
+        'model_name': r'general\.name\s*=\s*(.+)',
+        'gguf_version': r'gguf version\s*=\s*(\d+)'
+    }
+    
+    @staticmethod
+    def read_metadata(model_path: str) -> dict:
+        """Read model metadata using minimal context initialization"""
+        try:
+            stderr_buffer = StringIO()
+            with redirect_stderr(stderr_buffer):
+                # Initialize with minimal context to quickly read metadata
+                temp_model = Llama(
+                    model_path=model_path,
+                    n_ctx=8,  # Minimal context for quick metadata read
+                    n_threads=1,
+                    n_batch=1,
+                    verbose=True
+                )
+                del temp_model
+            
+            # Parse metadata from stderr output
+            metadata = {}
+            model_info = stderr_buffer.getvalue()
+            
+            # Extract parameters using patterns
+            for param, pattern in ModelMetadataReader.PARAM_PATTERNS.items():
+                match = re.search(pattern, model_info)
+                if match:
+                    val = match.group(1)
+                    # Convert to appropriate type
+                    if val.isdigit():
+                        metadata[param] = int(val)
+                    elif '.' in val and val.replace('.', '').isdigit():
+                        metadata[param] = float(val)
+                    else:
+                        metadata[param] = val
+            
+            # Add architecture if not found but can be inferred
+            if 'architecture' not in metadata:
+                if 'model_name' in metadata:
+                    if 'mistral' in metadata['model_name'].lower():
+                        metadata['architecture'] = 'llama'
+                    elif 'qwen' in metadata['model_name'].lower():
+                        metadata['architecture'] = 'qwen2'
+                    elif 'ayla' in metadata['model_name'].lower():
+                        metadata['architecture'] = 'llama'
+                        # Ayla models have a much larger context length
+                        metadata['context_length'] = 100000
+            
+            return metadata
+            
+        except Exception as e:
+            logger.error(f"Error reading model metadata: {str(e)}")
+            # Return minimal metadata to not break the API
+            return {
+                "architecture": "unknown",
+                "gguf_version": None
+            }
+
+# Global metadata cache to avoid repeated reads
+metadata_cache = {} 

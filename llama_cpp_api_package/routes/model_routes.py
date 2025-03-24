@@ -4,12 +4,14 @@ from typing import Dict, List, Optional
 import os
 import glob
 from datetime import datetime
+import psutil
+import time
 
 from ..utils.system_info import get_system_info
 from ..models.model_manager import model_manager
 from ..api.api_types import ModelStatus
 from ..models.model_types import ModelParameters
-from ..utils.model_metadata import metadata_cache
+from ..utils.model_metadata import ModelMetadataReader, metadata_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -17,52 +19,104 @@ router = APIRouter()
 def get_model_size(path: str) -> float:
     """Get model file size in MB"""
     try:
-        return os.path.getsize(path) / (1024 * 1024)  # Convert to MB
-    except:
-        return 0
+        return os.path.getsize(path) / (1024 * 1024)
+    except Exception as e:
+        logger.error(f"Error getting model size: {e}")
+        return 0.0
 
 def get_model_info(model_id: str, path: str) -> Dict:
-    """Get information about a model"""
-    size = get_model_size(path)
-    
-    # Get system info lazily
-    sys_info = get_system_info()
-    
-    # Calculate memory requirements (rough estimate)
-    required_memory = size * 2  # Rough estimate: model size * 2 for loading
-    
-    # Check if we can load the model
-    available_memory = sys_info.memory.get("available", 0)
-    if available_memory is not None:
-        can_load = available_memory > required_memory
-    else:
-        can_load = True  # If we can't determine memory, assume we can load
+    """Get detailed information about a model"""
+    try:
+        # Get file size
+        size = get_model_size(path)
         
-    # Get current status if model is loaded
-    status = model_manager.get_model_status(model_id)
-    loaded_info = model_manager.get_model_info(model_id) if status == ModelStatus.LOADED else None
-    
-    # Get model metadata with force_reload=True to ensure fresh data
-    metadata = metadata_cache.get_metadata(path, force_reload=True)
+        # Get system info for memory calculations
+        sys_info = get_system_info()
+        total_memory = sys_info.memory["total"]  # Already in MB
         
-    return {
-        "id": model_id,
-        "name": os.path.basename(path),
-        "path": path,
-        "size_mb": size,
-        "required_memory_mb": required_memory,
-        "can_load": can_load,
-        "status": status.value,
-        "loaded_info": loaded_info,
-        "metadata": metadata
-    }
+        # Calculate required memory (2x model size as conservative estimate)
+        required_memory = size * 2
+        
+        # Check if model can be loaded
+        can_load = required_memory < total_memory
+        
+        # Get model status
+        status = model_manager.get_model_status(model_id)
+        
+        # Get detailed metadata using ModelMetadataReader
+        metadata = ModelMetadataReader.read_metadata(path)
+        
+        # Get loaded model info if available
+        loaded_info = None
+        if model_id in model_manager.loaded_models:
+            loaded_info = model_manager.loaded_models[model_id]
+        
+        # Extract architecture details from metadata
+        architecture = {
+            "type": metadata.get("architecture", "unknown"),
+            "model_name": metadata.get("model_name", model_id),
+            "context_length": metadata.get("context_length", 2048),
+            "embedding_length": metadata.get("embedding_length", 4096),
+            "block_count": metadata.get("num_layers", 32),
+            "rope": {
+                "dimension_count": metadata.get("rope_dimension_count", 128),
+                "freq_base": metadata.get("rope_freq_base", 10000.0),
+                "freq_scale": metadata.get("rope_scaling", 1.0)
+            },
+            "attention": {
+                "head_count": metadata.get("num_heads", 32),
+                "head_count_kv": metadata.get("num_heads_kv", 32),
+                "layer_norm_rms_epsilon": 1e-5  # Default value as it's not in metadata
+            }
+        }
+        
+        # Calculate performance characteristics
+        performance = {
+            "quantization": "Q4_K_M" if "Q4_K_M" in model_id else "Q8_0" if "Q8_0" in model_id else "unknown",
+            "estimated_inference_speed": "tokens_per_second",  # This would need to be calculated based on model size/architecture
+            "recommended_batch_size": 256,
+            "recommended_thread_count": 4,
+            "context_utilization": 0.0,
+            "average_inference_time": 0.0,
+            "tokens_per_second": 0.0
+        }
+        
+        # If model is loaded, update performance metrics
+        if loaded_info:
+            performance.update({
+                "context_utilization": loaded_info.get("context_utilization", 0.0),
+                "average_inference_time": loaded_info.get("average_inference_time", 0.0),
+                "tokens_per_second": loaded_info.get("tokens_per_second", 0.0)
+            })
+        
+        return {
+            "id": model_id,
+            "name": os.path.basename(path),
+            "path": path,
+            "size_mb": size,
+            "required_memory_mb": required_memory,
+            "can_load": can_load,
+            "architecture": architecture,
+            "performance": performance,
+            "status": status.value if loaded_info else None,
+            "loaded_info": loaded_info
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting model info: {e}")
+        return {
+            "id": model_id,
+            "name": os.path.basename(path),
+            "path": path,
+            "size_mb": get_model_size(path),
+            "required_memory_mb": 0,
+            "can_load": False,
+            "error": str(e)
+        }
 
 @router.get("/api/models")
 async def list_models() -> Dict:
     """List all available models and system information"""
-    # Clear metadata cache to force refresh
-    metadata_cache.clear()
-    
     # Get fresh system info
     sys_info = get_system_info()
     
@@ -73,62 +127,95 @@ async def list_models() -> Dict:
     # Get info for each model
     available_models = []
     loaded_models = {}
-    total_model_memory = 0  # Track total memory used by loaded models
     
     for path in model_files:
         model_id = os.path.splitext(os.path.basename(path))[0]
-        model_info = get_model_info(model_id, path)
         
-        # Convert to UI format - only include fields UI expects
-        available_model = {
-            "id": model_info["id"],
-            "name": model_info["name"],
-            "path": model_info["path"],
-            "size_mb": model_info["size_mb"],
-            "required_memory_mb": model_info["required_memory_mb"],
-            "can_load": model_info["can_load"],
-            "metadata": model_info.get("metadata", {})
+        # Get file size
+        size = get_model_size(path)
+        
+        # Calculate required memory (2x model size as conservative estimate)
+        required_memory = size * 2
+        
+        # Check if model can be loaded
+        total_memory_mb = sys_info.memory["total"]
+        can_load = required_memory < total_memory_mb
+        
+        # Get model status
+        status = model_manager.get_model_status(model_id)
+        
+        # Get detailed metadata using ModelMetadataReader
+        metadata = ModelMetadataReader.read_metadata(path)
+        
+        # Extract architecture details from metadata
+        architecture = {
+            "type": metadata.get("architecture", "unknown"),
+            "model_name": metadata.get("model_name", model_id),
+            "context_length": metadata.get("context_length", 2048),
+            "embedding_length": metadata.get("embedding_length", 4096),
+            "block_count": metadata.get("num_layers", 32),
+            "rope": {
+                "dimension_count": metadata.get("rope_dimension_count", 128),
+                "freq_base": metadata.get("rope_freq_base", 10000.0),
+                "freq_scale": metadata.get("rope_scaling", 1.0)
+            },
+            "attention": {
+                "head_count": metadata.get("num_heads", 32),
+                "head_count_kv": metadata.get("num_heads_kv", 32),
+                "layer_norm_rms_epsilon": 1e-5  # Default value as it's not in metadata
+            }
         }
         
-        available_models.append(available_model)
-        logger.info(f"Added available model: {available_model}")
+        # Calculate performance characteristics
+        performance = {
+            "quantization": "Q4_K_M" if "Q4_K_M" in model_id else "Q8_0" if "Q8_0" in model_id else "unknown",
+            "estimated_inference_speed": "tokens_per_second",  # This would need to be calculated based on model size/architecture
+            "recommended_batch_size": 256,
+            "recommended_thread_count": 4,
+            "context_utilization": 0.0,
+            "average_inference_time": 0.0,
+            "tokens_per_second": 0.0
+        }
         
-        if model_info["status"] == "loaded" and model_info["loaded_info"]:
-            loaded_info = model_info["loaded_info"]
-            memory_used = loaded_info.get("memory_used", 0)
-            total_model_memory += memory_used
+        # Add to available models with enhanced structure
+        available_models.append({
+            "id": model_id,
+            "name": os.path.basename(path),
+            "path": path,
+            "size_mb": size,
+            "required_memory_mb": required_memory,
+            "can_load": can_load,
+            "architecture": architecture,
+            "performance": performance
+        })
+        
+        # Add to loaded models if loaded
+        if model_id in model_manager.loaded_models:
+            loaded_info = model_manager.loaded_models[model_id]
             loaded_models[model_id] = {
-                "status": model_info["status"],
+                "status": status.value,
                 "load_time": loaded_info.get("load_time"),
                 "last_used": loaded_info.get("last_used"),
-                "parameters": loaded_info.get("parameters", {}),
-                "memory_used_mb": memory_used,
-                "error": loaded_info.get("error")
+                "configuration": loaded_info.get("parameters", {}),
+                "resources": {
+                    "memory_used_mb": loaded_info.get("memory_used_mb", 0),
+                    "cpu_utilization": sys_info.cpu["utilization"],
+                    "gpu_utilization": sys_info.gpu.get("utilization") if sys_info.gpu else None
+                },
+                "performance": {
+                    "average_inference_time": loaded_info.get("average_inference_time", 0),
+                    "tokens_per_second": loaded_info.get("tokens_per_second", 0),
+                    "context_utilization": loaded_info.get("context_utilization", 0)
+                },
+                "health": {
+                    "is_healthy": status.value == "loaded",
+                    "last_error": loaded_info.get("error"),
+                    "uptime": str(datetime.now() - datetime.fromisoformat(loaded_info.get("load_time", datetime.now().isoformat())))
+                }
             }
-            logger.info(f"Added loaded model: {model_id}")
     
-    # Convert memory values to GB and include model memory
-    memory = sys_info.memory
-    total_memory = memory.get("total", 0)
-    used_memory = memory.get("used", 0) + total_model_memory  # Add model memory to system usage
-    
-    memory_gb = {
-        "total_gb": total_memory / 1024 if total_memory else 0,
-        "used_gb": used_memory / 1024 if used_memory else 0,
-        "model_memory_gb": total_model_memory / 1024
-    }
-    
-    # Format GPU info to match UI expectations
-    gpu_info = {
-        "available": sys_info.gpu_available,
-        "status": "available" if sys_info.gpu_available else "not available",
-        "name": sys_info.gpu_name or "Unknown",
-        "memory": {
-            "total_mb": sys_info.gpu.get("total"),
-            "free_mb": sys_info.gpu.get("free"),
-            "used_mb": sys_info.gpu.get("used")
-        } if sys_info.gpu else None
-    }
+    # Calculate total model memory
+    total_model_memory = sum(model.get("loaded_info", {}).get("memory_used_mb", 0) for model in available_models)
     
     response = {
         "models": {
@@ -137,8 +224,17 @@ async def list_models() -> Dict:
         },
         "system_state": {
             "cpu": sys_info.cpu,
-            "memory": memory_gb,
-            "gpu": gpu_info
+            "memory": {
+                "total_gb": sys_info.memory["total"] / 1024,  # Convert MB to GB
+                "used_gb": sys_info.memory["used"] / 1024,  # Convert MB to GB
+                "model_memory_gb": total_model_memory / 1024  # Convert MB to GB
+            },
+            "gpu": {
+                "available": sys_info.gpu is not None,
+                "status": sys_info.gpu.get("status", "not available") if sys_info.gpu else "not available",
+                "name": sys_info.gpu.get("name", "Unknown") if sys_info.gpu else "Unknown",
+                "memory": sys_info.gpu.get("memory") if sys_info.gpu else None
+            }
         }
     }
     
