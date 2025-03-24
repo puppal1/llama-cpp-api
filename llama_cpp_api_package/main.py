@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from llama_cpp_api_package.routes2.model_routes import router as v2_model_router
 from llama_cpp_api_package.routes2.metrics_routes import router as v2_metrics_router
+from llama_cpp_api_package.routes2.chat_routes import router as v2_chat_router
 from llama_cpp_api_package.routes2.model_cache import initialize_cache
 from llama_cpp_api_package.utils.logging_config import setup_logging
 from llama_cpp_api_package.utils.gpu_utils import GPU_AVAILABLE
@@ -110,6 +111,7 @@ app.add_middleware(
 # Include routers - only using v2 API routes now
 app.include_router(v2_model_router, prefix="/api/v2")
 app.include_router(v2_metrics_router, prefix="/api/v2")
+app.include_router(v2_chat_router, prefix="/api/v2")
 
 # Add compatibility routes (redirect from /api to /api/v2)
 @app.get("/api/models")
@@ -135,4 +137,19 @@ def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001, log_level="debug", reload=True) 
+    
+    # Get development mode flag from environment variable or default to True
+    dev_mode = os.getenv("DEV_MODE", "true").lower() == "true"
+    
+    # Set port from environment variable or default to 8001
+    port = int(os.getenv("SERVER_PORT", "8001"))
+    
+    # Run with hot reload in development mode
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=port, 
+        log_level="debug", 
+        reload=dev_mode,
+        reload_dirs=["llama_cpp_api_package"]
+    ) 
