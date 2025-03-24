@@ -6,14 +6,23 @@ from dataclasses import dataclass
 from functools import lru_cache
 import psutil
 import ctypes
+import time
 
 logger = logging.getLogger(__name__)
 
+# Cache NVML initialization status
+_nvml_initialized = False
+
 def _init_nvml():
     """Initialize NVML with portable path handling"""
+    global _nvml_initialized
+    if _nvml_initialized:
+        return True
+        
     try:
         import pynvml
         pynvml.nvmlInit()
+        _nvml_initialized = True
         return True
     except Exception as e:
         logger.warning(f"Failed to initialize NVML: {e}")
@@ -29,8 +38,9 @@ class SystemInfo:
     gpu_available: bool = False
     gpu_layers: int = 0  # Number of layers that can be offloaded to GPU
 
+@lru_cache(maxsize=1)
 def get_system_info() -> SystemInfo:
-    """Get system information (always fresh)"""
+    """Get system information (cached for 1 second)"""
     # Get fresh CPU and memory info
     cpu_info = get_cpu_info()
     memory_info = get_memory_info()
@@ -69,8 +79,9 @@ def get_system_info() -> SystemInfo:
         gpu_layers=gpu_layers
     )
 
+@lru_cache(maxsize=1)
 def get_cpu_info() -> Dict[str, Optional[Union[str, float, int]]]:
-    """Get CPU information using psutil and platform-specific methods"""
+    """Get CPU information using psutil and platform-specific methods (cached)"""
     info = {
         "name": None,
         "architecture": platform.machine(),
@@ -142,8 +153,9 @@ def get_cpu_info() -> Dict[str, Optional[Union[str, float, int]]]:
         
     return info
 
+@lru_cache(maxsize=1)
 def get_memory_info() -> Dict[str, Optional[float]]:
-    """Get memory information using psutil"""
+    """Get memory information using psutil (cached)"""
     try:
         import psutil
         vm = psutil.virtual_memory()

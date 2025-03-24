@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .routes import model_router, chat_router, metrics_router
+from .routes2.model_routes import router as v2_model_router, _initialize_model_cache
 from .utils.logging_config import setup_logging
 from .utils.gpu_utils import GPU_AVAILABLE
 import logging
@@ -24,6 +25,9 @@ async def lifespan(app: FastAPI):
     models_dir = os.getenv("MODELS_DIR", "models")
     os.makedirs(models_dir, exist_ok=True)
     logger.info(f"Using models directory: {models_dir}")
+    
+    # Initialize model cache at startup
+    _initialize_model_cache(models_dir)
     
     yield
     
@@ -54,6 +58,7 @@ app.add_middleware(
 app.include_router(model_router)
 app.include_router(chat_router)
 app.include_router(metrics_router)
+app.include_router(v2_model_router)
 
 @app.get("/")
 async def root():
