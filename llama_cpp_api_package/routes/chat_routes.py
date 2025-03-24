@@ -5,7 +5,8 @@ import asyncio
 import json
 import logging
 from ..models.model_manager import ModelManager
-from ..models.types import ChatRequest, ChatResponse, ModelStatus
+from ..api.api_types import ModelStatus
+from ..models.model_types import ChatRequest, ChatResponse
 
 router = APIRouter()
 model_manager = ModelManager()

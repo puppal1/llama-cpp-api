@@ -7,8 +7,9 @@ from datetime import datetime
 
 from ..utils.system_info import get_system_info
 from ..models.model_manager import model_manager
-from ..types import ModelStatus
-from ..models.types import ModelParameters
+from ..api.api_types import ModelStatus
+from ..models.model_types import ModelParameters
+from ..utils.model_metadata import metadata_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -40,6 +41,9 @@ def get_model_info(model_id: str, path: str) -> Dict:
     # Get current status if model is loaded
     status = model_manager.get_model_status(model_id)
     loaded_info = model_manager.get_model_info(model_id) if status == ModelStatus.LOADED else None
+    
+    # Get model metadata with force_reload=True to ensure fresh data
+    metadata = metadata_cache.get_metadata(path, force_reload=True)
         
     return {
         "id": model_id,
@@ -50,11 +54,15 @@ def get_model_info(model_id: str, path: str) -> Dict:
         "can_load": can_load,
         "status": status.value,
         "loaded_info": loaded_info,
+        "metadata": metadata
     }
 
 @router.get("/api/models")
 async def list_models() -> Dict:
     """List all available models and system information"""
+    # Clear metadata cache to force refresh
+    metadata_cache.clear()
+    
     # Get fresh system info
     sys_info = get_system_info()
     
@@ -78,7 +86,8 @@ async def list_models() -> Dict:
             "path": model_info["path"],
             "size_mb": model_info["size_mb"],
             "required_memory_mb": model_info["required_memory_mb"],
-            "can_load": model_info["can_load"]
+            "can_load": model_info["can_load"],
+            "metadata": model_info.get("metadata", {})
         }
         
         available_models.append(available_model)

@@ -261,6 +261,89 @@ These warnings can be safely ignored for now. They're related to FastAPI's event
    - Check system memory availability
    - Ensure DLLs are properly loaded (run `test_dll.py` first)
 
+### Model Compatibility
+
+#### RoPE Parameters and Model Architecture
+
+Different models may use varying RoPE (Rotary Position Embedding) configurations. Here's what you need to know:
+
+1. **Standard Models**
+   - Most models use standard RoPE configurations
+   - Default parameters work out of the box
+   - Examples: Mistral, WizardLM
+
+2. **Custom/Hybrid Models**
+   - Some models use non-standard RoPE dimensions
+   - May require specific configuration
+   - Examples: Ayla, MOE models
+
+#### Known Model-Specific Configurations
+
+1. **Ayla Models**
+   - Uses 128 RoPE dimensions (non-standard)
+   - Requires custom configuration:
+   ```python
+   {
+       "rope_dimension_count": 128,
+       "rope_freq_base": 1000000.0,
+       "n_ctx": 2048
+   }
+   ```
+
+2. **DeepSeek Models**
+   - Successfully runs with default configuration
+   - Optimal parameters:
+   ```python
+   {
+       "rope_freq_base": 10000.0,
+       "rope_scaling_type": "linear",
+       "n_ctx": 4096
+   }
+   ```
+
+3. **MOE Models**
+   - May require specific tensor configurations
+   - Recommended settings:
+   ```python
+   {
+       "n_threads": 4,
+       "n_batch": 256,
+       "n_gpu_layers": 0
+   }
+   ```
+
+#### Testing Model Compatibility
+
+To test if your model is compatible:
+
+```bash
+# Test specific model configuration
+python llama_cpp_api_package/test_models.py --model path/to/your/model.gguf
+
+# View model metadata
+python read_gguf_metadata.py path/to/your/model.gguf
+```
+
+#### Troubleshooting Model Issues
+
+1. **RoPE Dimension Mismatch**
+   - Error: "invalid n_rot: X, expected Y"
+   - Solution: Use model-specific configuration with correct RoPE dimensions
+
+2. **Memory Issues**
+   - Error: "Failed to load model: insufficient memory"
+   - Solution: Reduce batch size or context length, or try quantized versions
+
+3. **Tensor Type Errors**
+   - Error: "GGML_ASSERT: ..."
+   - Solution: Check model compatibility and quantization format
+
+For detailed logs and debugging:
+```bash
+export LLAMA_DEBUG=1
+python llama_cpp_api_package/test_models.py --verbose
+```
+
 ## Configuration
 
 ### Model Parameters

@@ -257,6 +257,13 @@ key/value caches, and temporary computations.`;
                   {model.id}
                 </Typography>
                 <List dense>
+                  {/* Basic Info */}
+                  <ListItem>
+                    <ListItemText 
+                      primary="Model Type"
+                      secondary={model.metadata?.model_type || 'Unknown'}
+                    />
+                  </ListItem>
                   <ListItem>
                     <ListItemText 
                       primary="Size"
@@ -278,6 +285,50 @@ key/value caches, and temporary computations.`;
                       secondary={formatMemory(model.required_memory_mb)}
                     />
                   </ListItem>
+
+                  {/* Model Capabilities */}
+                  {model.metadata && (
+                    <>
+                      <ListItem>
+                        <ListItemText 
+                          primary="Context Window"
+                          secondary={`${model.metadata.n_ctx_train?.toLocaleString() || 'N/A'} tokens`}
+                        />
+                      </ListItem>
+                      <ListItem>
+                        <ListItemText 
+                          primary="Vocabulary"
+                          secondary={`${model.metadata.n_vocab?.toLocaleString() || 'N/A'} tokens`}
+                        />
+                      </ListItem>
+                      <ListItem>
+                        <ListItemText 
+                          primary="Layers"
+                          secondary={`${model.metadata.n_layers || 'N/A'}`}
+                        />
+                      </ListItem>
+                      <ListItem>
+                        <ListItemText 
+                          primary="RoPE Settings"
+                          secondary={
+                            <>
+                              <Typography variant="body2" component="span">
+                                Dimensions: {model.metadata.rope_dimension_count || 'N/A'}
+                              </Typography>
+                              <br />
+                              <Typography variant="body2" component="span">
+                                Base: {model.metadata.rope_freq_base || 'N/A'}
+                              </Typography>
+                              <br />
+                              <Typography variant="body2" component="span">
+                                Scale: {model.metadata.rope_freq_scale || 'N/A'}
+                              </Typography>
+                            </>
+                          }
+                        />
+                      </ListItem>
+                    </>
+                  )}
                 </List>
                 <Button
                   fullWidth

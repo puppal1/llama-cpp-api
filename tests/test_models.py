@@ -1,4 +1,5 @@
-from llama_cpp_api_package.llama_api import LlamaModel
+from llama_cpp_api_package.models.model_manager import model_manager
+from llama_cpp_api_package.models.types import ModelParameters
 import os
 
 def test_model(model_path):
@@ -8,19 +9,37 @@ def test_model(model_path):
     try:
         # Initialize model
         print("\nTesting model loading...")
-        llm = LlamaModel()
-        llm.load(
+        model_id = os.path.splitext(os.path.basename(model_path))[0]
+        
+        # Create model parameters
+        parameters = ModelParameters(
             model_path=model_path,
-            n_ctx=2048,
-            n_threads=4,
-            n_gpu_layers=0
+            num_ctx=2048,
+            num_thread=4,
+            num_gpu=0,
+            rope_freq_base=1000000.0,  # From model metadata
+            rope_freq_scale=1.0,
+            rope_scaling=None  # Disable RoPE scaling
+        )
+        
+        # For Ayla model specifically, adjust RoPE parameters
+        if "Ayla-Light" in model_path:
+            parameters.rope_freq_base = 1000000.0  # From model metadata
+            parameters.rope_freq_scale = 1.0
+            parameters.num_ctx = 1024000  # From model metadata
+            
+        # Load the model
+        model_manager.load_model(
+            model_id=model_id,
+            parameters=parameters
         )
         print("Model loading test passed!")
         
         # Test basic generation
         print("\nTesting text generation...")
         prompt = "Hello, how are you?"
-        response = llm.generate(
+        response = model_manager.generate(
+            model_id=model_id,
             prompt=prompt,
             max_tokens=20,
             temperature=0.7
@@ -35,7 +54,8 @@ def test_model(model_path):
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": "What is 2+2?"}
         ]
-        response = llm.chat(
+        response = model_manager.chat(
+            model_id=model_id,
             messages=messages,
             max_tokens=20,
             temperature=0.7
@@ -45,7 +65,7 @@ def test_model(model_path):
         
         # Unload model
         print("\nTesting model unloading...")
-        llm.unload()
+        model_manager.unload_model(model_id)
         print("Model unloading test passed!")
         
         return True

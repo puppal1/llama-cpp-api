@@ -60,6 +60,13 @@ build/
 htmlcov/
 .pytest_cache/
 .tox/
+test_results/
+*.json
+!package.json
+!package-lock.json
+test_metrics/
+benchmark_results/
+performance_metrics/
 
 # Documentation
 docs/_build/

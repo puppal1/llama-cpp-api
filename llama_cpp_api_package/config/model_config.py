@@ -28,8 +28,15 @@ class ModelDefaults:
     default_batch_size: int = 512         # Default batch size
     default_threads: int = 4              # Default number of threads
     default_gpu_layers: int = 0           # Default number of GPU layers
+    
+    # RoPE parameters
     rope_freq_base: float = 10000.0       # Default RoPE frequency base
     rope_freq_scale: float = 1.0          # Default RoPE frequency scaling
+    rope_scaling_type: str = "linear"     # RoPE scaling type (none, linear, yarn)
+    rope_ext_factor: float = 0.0          # RoPE context extension factor
+    rope_attn_factor: float = 1.0         # RoPE attention scaling factor
+    rope_beta_fast: float = 32.0          # YaRN beta fast parameter
+    rope_beta_slow: float = 1.0           # YaRN beta slow parameter
 
 @dataclass
 class BufferSizes:

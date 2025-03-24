@@ -6,7 +6,10 @@ A self-contained API for interacting with llama.cpp models.
 
 # Package initialization
 from .main import app
-from .models.model_manager import model_manager
-from .models.types import ModelParameters, ModelStatus
+from .models.model_manager import ModelManager
+from .api.api_types import ModelStatus
+from .models.model_types import ModelParameters
 
-__version__ = "0.1.0" 
+__version__ = "0.1.0"
+
+__all__ = ["ModelManager", "ModelStatus", "ModelParameters"] 

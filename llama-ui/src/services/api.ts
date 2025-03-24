@@ -36,6 +36,22 @@ export interface LoadedModel {
   error: string | null;
 }
 
+export interface ModelMetadata {
+  architecture: string;
+  context_length: number;
+  embedding_length: number;
+  attention_head_count: number;
+  attention_head_count_kv: number;
+  vocab_size: number;
+  model_type: string;
+  model_params: number;
+  expert_count?: number;
+  expert_used_count?: number;
+  file_type: string;
+  quantization_version: number;
+  rope_dimension_count?: number;
+}
+
 export interface AvailableModel {
   id: string;
   name: string;
@@ -43,6 +59,14 @@ export interface AvailableModel {
   size_mb: number;
   required_memory_mb: number;
   can_load: boolean;
+  metadata?: {
+    model_type?: string;
+    n_ctx_train?: number;
+    n_vocab?: number;
+    n_layers?: number;
+    rope_freq_base?: number;
+    rope_freq_scale?: number;
+  };
 }
 
 export interface CpuInfo {
@@ -94,6 +118,14 @@ export interface ModelsResponse {
       size_mb: number;
       required_memory_mb: number;
       can_load: boolean;
+      metadata?: {
+        model_type?: string;
+        n_ctx_train?: number;
+        n_vocab?: number;
+        n_layers?: number;
+        rope_freq_base?: number;
+        rope_freq_scale?: number;
+      };
     }>;
     loaded: Record<string, {
       status: string;
