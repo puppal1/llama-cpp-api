@@ -1,55 +1,124 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
+import {
+  Box,
+  Card,
+  CardContent,
+  Typography,
+  Button,
+  LinearProgress,
+  Slider,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Alert,
+  Grid,
+  Paper,
+} from '@mui/material';
+import { styled } from '@mui/material/styles';
 import { TbLoader, TbBrandOpenai, TbCircleCheck, TbX } from 'react-icons/tb';
 
-type Model = {
-  id: string;
-  metadata: {
-    parameters?: {
-      name?: string;
-      context_length?: number;
-      gpu_layers?: number;
-    };
-    layers?: number;
-    status?: string;
-    loaded?: boolean;
-    load_time?: string | null;
-    architecture?: string;
+interface ModelMetadata {
+  model_type: string;
+  size_gb: number;
+  memory_required_gb: number;
+  is_safe_to_load: boolean;
+  current_memory_gb?: number;
+  status: 'AVAILABLE' | 'LOADING' | 'LOADED' | 'ERROR';
+  parameters: {
+    context_length: number;
+    n_gpu_layers: number;
   };
-  size: number;
-};
+}
 
-type ModelParams = {
-  n_gpu_layers?: number;
-  n_ctx?: number;
-  n_batch?: number;
-  threads?: number;
-  use_mlock?: boolean;
-  f16_kv?: boolean;
+interface Model {
+  id: string;
+  size: number;
+  metadata: ModelMetadata;
+}
+
+// Types for memory metrics
+interface MemoryMetrics {
+  system: {
+    total_gb: number;
+    available_gb: number;
+    used_gb: number;
+    percent_used: number;
+  };
+  models: Record<string, number>;
+  total_model_memory_gb: number;
+  available_for_models_gb: number;
+}
+
+interface ModelParams {
+  n_gpu_layers: number;
+  n_ctx: number;
+  n_batch: number;
+  threads: number;
+  use_mlock: boolean;
+  f16_kv: boolean;
+}
+
+interface ModelResponse {
+  available_models: Model[];
+  loaded_models: Model[];
+  memory_metrics: MemoryMetrics;
+}
+
+const StyledCard = styled(Card)(({ theme }) => ({
+  margin: theme.spacing(2),
+  position: 'relative',
+  backgroundColor: theme.palette.mode === 'dark' ? '#0C0C0C' : '#fff',
+  color: theme.palette.mode === 'dark' ? '#f8f8f2' : '#000',
+  border: `1px solid ${theme.palette.mode === 'dark' ? '#333' : '#e0e0e0'}`,
+}));
+
+const StyledPaper = styled(Paper)(({ theme }) => ({
+  backgroundColor: theme.palette.mode === 'dark' ? '#0C0C0C' : '#fff',
+  color: theme.palette.mode === 'dark' ? '#f8f8f2' : '#000',
+  border: `1px solid ${theme.palette.mode === 'dark' ? '#333' : '#e0e0e0'}`,
+  padding: theme.spacing(2),
+}));
+
+const MemoryIndicator = styled(Box)(({ theme }) => ({
+  marginTop: theme.spacing(2),
+  padding: theme.spacing(1),
+  '& .MuiLinearProgress-root': {
+    backgroundColor: theme.palette.mode === 'dark' ? '#333' : '#e0e0e0',
+    '& .MuiLinearProgress-bar': {
+      backgroundColor: theme.palette.success.main,
+    },
+    '&.unsafe .MuiLinearProgress-bar': {
+      backgroundColor: theme.palette.error.main,
+    }
+  }
+}));
+
+const DEFAULT_MODEL_PARAMS: ModelParams = {
+  n_gpu_layers: 0,
+  n_ctx: 2048,
+  n_batch: 512,
+  threads: 4,
+  use_mlock: true,
+  f16_kv: true,
 };
 
 const Models = () => {
   const queryClient = useQueryClient();
-  const [modelParams, setModelParams] = useState<ModelParams>({
-    n_gpu_layers: 0,
-    n_ctx: 2048,
-    n_batch: 512,
-    threads: 4,
-    use_mlock: true,
-    f16_kv: true,
-  });
+  const [modelParams, setModelParams] = useState<ModelParams>(DEFAULT_MODEL_PARAMS);
   const [showParams, setShowParams] = useState(false);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
 
   // Fetch models
-  const { data: modelsData, isLoading: isLoadingModels } = useQuery({
+  const { data: modelsData, isLoading: isLoadingModels } = useQuery<ModelResponse>({
     queryKey: ['models'],
     queryFn: async () => {
       const response = await axios.get('/api/v2/models');
       return response.data;
     },
-    refetchInterval: 10000, // Refetch every 10 seconds
+    refetchInterval: 5000, // Refetch every 5 seconds for memory updates
   });
 
   // Load model mutation
@@ -72,12 +141,8 @@ const Models = () => {
     },
   });
 
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  const formatBytes = (gb: number) => {
+    return `${gb.toFixed(2)} GB`;
   };
 
   const handleLoadModel = (modelId: string) => {
@@ -88,201 +153,222 @@ const Models = () => {
     unloadModelMutation.mutate(modelId);
   };
 
+  const handleContextChange = (_event: Event, newValue: number | number[]) => {
+    setModelParams(prev => ({
+      ...prev,
+      n_ctx: Array.isArray(newValue) ? newValue[0] : newValue
+    }));
+  };
+
+  if (isLoadingModels) {
+    return <LinearProgress />;
+  }
+
+  const memoryMetrics: MemoryMetrics = modelsData?.memory_metrics || {
+    system: { total_gb: 0, available_gb: 0, used_gb: 0, percent_used: 0 },
+    models: {},
+    total_model_memory_gb: 0,
+    available_for_models_gb: 0
+  };
+
   return (
-    <div className="mt-6">
-      <h2 className="text-xl text-terminal-green mb-4">LLM Models</h2>
-      
+    <Box sx={{ p: 3 }}>
+      <Typography variant="h4" gutterBottom>
+        Models
+      </Typography>
+
+      {/* System Memory Overview */}
+      <StyledPaper sx={{ mb: 3 }}>
+        <Typography variant="h6" gutterBottom sx={{ color: 'inherit' }}>
+          System Memory Overview
+        </Typography>
+        <Grid container spacing={2}>
+          <Grid item xs={12} md={6}>
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Total System Memory: {formatBytes(memoryMetrics.system.total_gb)}
+            </Typography>
+            <LinearProgress
+              variant="determinate"
+              value={(memoryMetrics.total_model_memory_gb / memoryMetrics.system.total_gb) * 100}
+              sx={{
+                my: 1,
+                height: 8,
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                '& .MuiLinearProgress-bar': {
+                  backgroundColor: (theme) => theme.palette.success.main
+                }
+              }}
+            />
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Model Memory Usage: {formatBytes(memoryMetrics.total_model_memory_gb)}
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Available for Models: {formatBytes(memoryMetrics.available_for_models_gb)}
+            </Typography>
+          </Grid>
+        </Grid>
+      </StyledPaper>
+
       {/* Model Parameters */}
-      <div className="mb-6">
-        <button 
-          className="text-terminal-green border border-terminal-green px-3 py-1 rounded-md hover:bg-terminal-green/20 transition-colors"
-          onClick={() => setShowParams(!showParams)}
-        >
-          {showParams ? 'Hide Parameters' : 'Show Parameters'}
-        </button>
-        
-        {showParams && (
-          <div className="terminal-window p-4 mt-3">
-            <h3 className="text-terminal-green mb-3">Model Loading Parameters</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm mb-1">GPU Layers</label>
-                <input 
-                  type="number" 
-                  value={modelParams.n_gpu_layers}
-                  onChange={(e) => setModelParams({...modelParams, n_gpu_layers: parseInt(e.target.value) || 0})}
-                  className="bg-terminal-background border border-terminal-green p-2 w-full rounded-md text-terminal-foreground"
-                />
-              </div>
-              <div>
-                <label className="block text-sm mb-1">Context Length</label>
-                <input 
-                  type="number" 
-                  value={modelParams.n_ctx}
-                  onChange={(e) => setModelParams({...modelParams, n_ctx: parseInt(e.target.value) || 0})}
-                  className="bg-terminal-background border border-terminal-green p-2 w-full rounded-md text-terminal-foreground"
-                />
-              </div>
-              <div>
-                <label className="block text-sm mb-1">Batch Size</label>
-                <input 
-                  type="number" 
-                  value={modelParams.n_batch}
-                  onChange={(e) => setModelParams({...modelParams, n_batch: parseInt(e.target.value) || 0})}
-                  className="bg-terminal-background border border-terminal-green p-2 w-full rounded-md text-terminal-foreground"
-                />
-              </div>
-              <div>
-                <label className="block text-sm mb-1">Threads</label>
-                <input 
-                  type="number" 
-                  value={modelParams.threads}
-                  onChange={(e) => setModelParams({...modelParams, threads: parseInt(e.target.value) || 0})}
-                  className="bg-terminal-background border border-terminal-green p-2 w-full rounded-md text-terminal-foreground"
-                />
-              </div>
-              <div className="flex items-center space-x-4 mt-6">
-                <div className="flex items-center">
-                  <input 
-                    type="checkbox" 
-                    id="use_mlock" 
-                    checked={modelParams.use_mlock}
-                    onChange={(e) => setModelParams({...modelParams, use_mlock: e.target.checked})}
-                    className="mr-2"
-                  />
-                  <label htmlFor="use_mlock">MLock</label>
-                </div>
-                <div className="flex items-center">
-                  <input 
-                    type="checkbox" 
-                    id="f16_kv" 
-                    checked={modelParams.f16_kv}
-                    onChange={(e) => setModelParams({...modelParams, f16_kv: e.target.checked})}
-                    className="mr-2"
-                  />
-                  <label htmlFor="f16_kv">f16_kv</label>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-      
+      <StyledPaper sx={{ mb: 3 }}>
+        <Typography variant="h6" gutterBottom sx={{ color: 'inherit' }}>
+          Model Parameters
+        </Typography>
+        <Box sx={{ width: '100%', mt: 2 }}>
+          <Typography gutterBottom sx={{ color: 'text.secondary' }}>
+            Context Length: {modelParams.n_ctx}
+          </Typography>
+          <Slider
+            value={modelParams.n_ctx}
+            onChange={handleContextChange}
+            min={512}
+            max={4096}
+            step={512}
+            marks={[
+              { value: 512, label: '512' },
+              { value: 2048, label: '2048' },
+              { value: 4096, label: '4096' },
+            ]}
+            valueLabelDisplay="auto"
+            sx={{
+              '& .MuiSlider-rail': {
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+              },
+              '& .MuiSlider-track': {
+                backgroundColor: 'primary.main',
+              },
+              '& .MuiSlider-thumb': {
+                backgroundColor: 'primary.main',
+              },
+              '& .MuiSlider-mark': {
+                backgroundColor: 'rgba(255, 255, 255, 0.3)',
+              },
+              '& .MuiSlider-markLabel': {
+                color: 'text.secondary',
+              },
+            }}
+          />
+        </Box>
+      </StyledPaper>
+
       {/* Available Models */}
-      <div className="terminal-window p-4 mb-6">
-        <h3 className="text-terminal-green mb-3">Available Models</h3>
-        
-        {isLoadingModels ? (
-          <div className="text-terminal-dimmed flex items-center">
-            <TbLoader className="animate-spin mr-2" />
-            Loading models...
-          </div>
-        ) : !modelsData?.available_models || modelsData.available_models.length === 0 ? (
-          <div className="text-terminal-dimmed">No available models found</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-terminal-dimmed/40">
-                  <th className="text-left py-2 px-3">Model ID</th>
-                  <th className="text-left py-2 px-3">Size</th>
-                  <th className="text-left py-2 px-3">Architecture</th>
-                  <th className="text-left py-2 px-3">Context</th>
-                  <th className="text-left py-2 px-3">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {modelsData.available_models.map((model: Model) => (
-                  <tr key={model.id} className="border-b border-terminal-dimmed/20 hover:bg-terminal-highlight/10">
-                    <td className="py-2 px-3">
-                      <div className="flex items-center">
-                        <TbBrandOpenai className="mr-2 text-terminal-green" />
-                        {model.id.replace('.gguf', '')}
-                      </div>
-                    </td>
-                    <td className="py-2 px-3">{formatBytes(model.size)}</td>
-                    <td className="py-2 px-3">{model.metadata?.architecture || 'Unknown'}</td>
-                    <td className="py-2 px-3">{model.metadata?.parameters?.context_length || 'Default'}</td>
-                    <td className="py-2 px-3">
-                      <button 
-                        className="text-terminal-green border border-terminal-green px-2 py-1 rounded-md hover:bg-terminal-green/20 transition-colors"
-                        onClick={() => handleLoadModel(model.id)}
-                        disabled={loadModelMutation.isPending && selectedModelId === model.id}
-                      >
-                        {loadModelMutation.isPending && selectedModelId === model.id ? 
-                          <span className="flex items-center"><TbLoader className="animate-spin mr-1" /> Loading...</span> : 
-                          'Load Model'
-                        }
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-      
+      <Typography variant="h6" gutterBottom sx={{ color: 'inherit', mb: 2 }}>
+        Available Models
+      </Typography>
+      <Grid container spacing={2}>
+        {modelsData?.available_models.map((model) => (
+          <Grid item xs={12} key={model.id}>
+            <StyledCard>
+              <CardContent>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} md={6}>
+                    <Typography variant="h6" sx={{ color: 'inherit' }}>
+                      {model.id}
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                      Type: {model.metadata.model_type}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                      Context Length: {model.metadata.parameters?.context_length || 2048}
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                      GPU Layers: {model.metadata.parameters?.n_gpu_layers || 0}
+                    </Typography>
+                  </Grid>
+                </Grid>
+                
+                {/* Memory Requirements */}
+                <MemoryIndicator>
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                    Required Memory: {formatBytes(model.metadata.memory_required_gb)}
+                  </Typography>
+                  <LinearProgress
+                    variant="determinate"
+                    value={(model.metadata.memory_required_gb / memoryMetrics.system.total_gb) * 100}
+                    className={!model.metadata.is_safe_to_load ? 'unsafe' : ''}
+                    sx={{ 
+                      my: 1, 
+                      height: 8,
+                    }}
+                  />
+                  {!model.metadata.is_safe_to_load && (
+                    <Alert severity="error" sx={{ mt: 1 }}>
+                      Insufficient memory to load this model with current parameters
+                    </Alert>
+                  )}
+                </MemoryIndicator>
+
+                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={() => handleLoadModel(model.id)}
+                    disabled={!model.metadata.is_safe_to_load || loadModelMutation.isPending}
+                    startIcon={loadModelMutation.isPending ? <TbLoader className="animate-spin" /> : <TbBrandOpenai />}
+                  >
+                    Load Model
+                  </Button>
+                </Box>
+              </CardContent>
+            </StyledCard>
+          </Grid>
+        ))}
+      </Grid>
+
       {/* Loaded Models */}
-      <div className="terminal-window p-4">
-        <h3 className="text-terminal-green mb-3">Loaded Models</h3>
-        
-        {isLoadingModels ? (
-          <div className="text-terminal-dimmed flex items-center">
-            <TbLoader className="animate-spin mr-2" />
-            Loading models...
-          </div>
-        ) : !modelsData?.loaded_models || modelsData.loaded_models.length === 0 ? (
-          <div className="text-terminal-dimmed">No loaded models</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-terminal-dimmed/40">
-                  <th className="text-left py-2 px-3">Model ID</th>
-                  <th className="text-left py-2 px-3">Size</th>
-                  <th className="text-left py-2 px-3">Status</th>
-                  <th className="text-left py-2 px-3">Loaded At</th>
-                  <th className="text-left py-2 px-3">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {modelsData.loaded_models.map((model: Model) => (
-                  <tr key={model.id} className="border-b border-terminal-dimmed/20 hover:bg-terminal-highlight/10">
-                    <td className="py-2 px-3">
-                      <div className="flex items-center">
-                        <TbBrandOpenai className="mr-2 text-terminal-green" />
-                        {model.id.replace('.gguf', '')}
-                      </div>
-                    </td>
-                    <td className="py-2 px-3">{formatBytes(model.size)}</td>
-                    <td className="py-2 px-3">
-                      <div className="flex items-center">
-                        <TbCircleCheck className="mr-1 text-green-500" />
-                        Active
-                      </div>
-                    </td>
-                    <td className="py-2 px-3">{model.metadata?.load_time ? new Date(model.metadata.load_time).toLocaleString() : 'Unknown'}</td>
-                    <td className="py-2 px-3">
-                      <button 
-                        className="text-red-400 border border-red-400 px-2 py-1 rounded-md hover:bg-red-400/20 transition-colors flex items-center"
+      {modelsData?.loaded_models && modelsData.loaded_models.length > 0 && (
+        <>
+          <Typography variant="h6" gutterBottom sx={{ color: 'inherit', mt: 4, mb: 2 }}>
+            Loaded Models
+          </Typography>
+          <Grid container spacing={2}>
+            {modelsData.loaded_models.map((model) => (
+              <Grid item xs={12} key={model.id}>
+                <StyledCard>
+                  <CardContent>
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="h6" sx={{ color: 'inherit', display: 'flex', alignItems: 'center', gap: 1 }}>
+                          {model.id}
+                          <TbCircleCheck className="text-green-500" />
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                          Current Memory: {formatBytes(model.metadata.current_memory_gb || 0)}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                          Context Length: {model.metadata.parameters?.context_length || 2048}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                          GPU Layers: {model.metadata.parameters?.n_gpu_layers || 0}
+                        </Typography>
+                      </Grid>
+                    </Grid>
+
+                    <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                      <Button
+                        variant="outlined"
+                        color="error"
                         onClick={() => handleUnloadModel(model.id)}
-                        disabled={unloadModelMutation.isPending && selectedModelId === model.id}
+                        disabled={unloadModelMutation.isPending}
+                        startIcon={unloadModelMutation.isPending ? <TbLoader className="animate-spin" /> : <TbX />}
                       >
-                        {unloadModelMutation.isPending && selectedModelId === model.id ? 
-                          <span className="flex items-center"><TbLoader className="animate-spin mr-1" /> Unloading...</span> : 
-                          <><TbX className="mr-1" /> Unload</>
-                        }
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
+                        Unload Model
+                      </Button>
+                    </Box>
+                  </CardContent>
+                </StyledCard>
+              </Grid>
+            ))}
+          </Grid>
+        </>
+      )}
+    </Box>
   );
 };
 

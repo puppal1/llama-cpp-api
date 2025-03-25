@@ -11,6 +11,7 @@ from ..utils.system_info import get_system_info
 from ..api.api_types import ModelStatus
 from ..models.model_manager import model_manager
 from ..models.model_types import ModelParameters
+from ..utils.memory_manager import memory_manager
 from .model_cache import (
     list_models,
     get_model_metadata,
@@ -64,17 +65,11 @@ async def list_available_models():
         if not models_dir:
             raise HTTPException(status_code=500, detail="MODELS_DIR environment variable not set")
         
-        # Log the known models before listing
-        logger.info(f"Known models before listing: {_known_models}")
-        
-        # If cache is empty, initialize it
-        if not _known_models:
-            logger.info("Model cache empty, initializing...")
-            initialize_cache(models_dir)
-            logger.info(f"Model cache initialized with {len(_known_models)} models")
-        
         # Get models from cache
         all_models = list_models(models_dir)
+        
+        # Get current memory metrics
+        memory_metrics = memory_manager.get_memory_metrics()
         
         # Separate into available and loaded models
         available_models = []
@@ -88,30 +83,47 @@ async def list_available_models():
             # Check multiple ways a model could be marked as loaded
             is_loaded = False
             if model.get("metadata"):
-                # Check various flags that might indicate a loaded model
                 if model["metadata"].get("loaded", False):
                     is_loaded = True
                 elif model["metadata"].get("status") == "ModelStatus.LOADED":
                     is_loaded = True
                 elif model["metadata"].get("load_time") is not None:
                     is_loaded = True
+
+                # Convert size to GB
+                size_bytes = model.get("size", 0)
+                model["metadata"]["size_gb"] = size_bytes / (1024 * 1024 * 1024)
                 
-                # Remove path from metadata if it exists
-                if "path" in model["metadata"]:
-                    model["metadata"].pop("path")
-            
-            logger.debug(f"Model {model['id']} loaded status: {is_loaded}")
+                # Add memory requirements info
+                model_id = model["id"].replace(".gguf", "").lower()
+                memory_required, is_safe = memory_manager.calculate_required_memory(
+                    model_id, 
+                    model.get("metadata", {}).get("parameters", {}).get("context_length", 2048)
+                )
+                
+                # Update metadata with memory information
+                if "parameters" not in model["metadata"]:
+                    model["metadata"]["parameters"] = {}
+                
+                model["metadata"].update({
+                    "memory_required_gb": memory_required,
+                    "is_safe_to_load": is_safe,
+                    "status": "LOADED" if is_loaded else "AVAILABLE"
+                })
+                
+                # If loaded, add current memory usage
+                if is_loaded:
+                    model["metadata"]["current_memory_gb"] = memory_manager.model_memory_usage.get(model_id, 0)
             
             if is_loaded:
                 loaded_models.append(model)
             else:
                 available_models.append(model)
         
-        logger.info(f"Found {len(available_models)} available models and {len(loaded_models)} loaded models")
-        
         return {
             "available_models": available_models,
-            "loaded_models": loaded_models
+            "loaded_models": loaded_models,
+            "memory_metrics": memory_metrics
         }
     except Exception as e:
         logger.error(f"Error listing models: {e}")
@@ -168,44 +180,44 @@ async def load_model(model_id: str, parameters: Optional[Dict] = None):
         # Ensure model_id has .gguf extension
         if not model_id.endswith(".gguf"):
             model_id = f"{model_id}.gguf"
-            
+        
         logger.info(f"Requested to load model: {model_id}")
         
-        # Get model path
-        models_dir = os.getenv("MODELS_DIR")
-        if not models_dir:
-            raise HTTPException(status_code=500, detail="MODELS_DIR environment variable not set")
-        model_path = os.path.join(models_dir, model_id)
+        # Check if model exists
+        if model_id not in _known_models:
+            raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
         
-        # Check if model file exists
-        if not os.path.exists(model_path):
-            logger.error(f"Model file not found: {model_path}")
-            raise HTTPException(status_code=404, detail=f"Model file {model_id} not found")
+        # Get model metadata
+        metadata = get_model_metadata(model_id)
+        if not metadata:
+            raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
         
-        # Create model parameters
-        try:
-            # Convert parameters to ModelParameters instance
-            if parameters is None:
-                parameters = {}
-                
-            # Log received parameters
-            logger.info(f"Received parameters for model {model_id}: {parameters}")
-            
+        # Parse parameters
+        model_params = ModelParameters()
+        if parameters:
             model_params = ModelParameters(**parameters)
-            
-            # Log parameters after validation
-            logger.info(f"Validated parameters: {model_params.dict()}")
-        except Exception as e:
-            logger.error(f"Error processing model parameters: {e}")
-            raise HTTPException(status_code=400, detail=f"Invalid parameters: {str(e)}")
+        
+        # Check memory requirements
+        can_load, message = memory_manager.can_load_model(
+            model_id.replace(".gguf", "").lower(), 
+            model_params.n_ctx
+        )
+        if not can_load:
+            raise HTTPException(status_code=400, detail=message)
         
         # Load model using singleton instance
         try:
-            # Remove .gguf extension for the model manager
             model_id_without_ext = model_id.replace(".gguf", "")
             logger.info(f"Starting model loading: {model_id_without_ext}")
             model_info = model_manager.load_model(model_id_without_ext, model_params)
             logger.info(f"Model loaded successfully: {model_id}")
+            
+            # Register model memory usage
+            memory_required, _ = memory_manager.calculate_required_memory(
+                model_id_without_ext.lower(), 
+                model_params.n_ctx
+            )
+            memory_manager.register_model_load(model_id_without_ext.lower(), memory_required)
             
             # Update cache with load state
             _initialize_or_update_cache(
@@ -216,15 +228,15 @@ async def load_model(model_id: str, parameters: Optional[Dict] = None):
                     "model_id": model_id,
                     "is_loaded": True,
                     "load_time": model_info.get("load_time"),
-                    "memory_used": model_info.get("memory_mb")
+                    "memory_used": memory_required
                 }
             )
             
-            # Return status
             return {
                 "status": "loaded", 
                 "model_id": model_id,
-                "info": model_info
+                "info": model_info,
+                "memory_metrics": memory_manager.get_memory_metrics()
             }
         except Exception as e:
             logger.error(f"Error loading model: {e}", exc_info=True)
@@ -240,41 +252,36 @@ async def load_model(model_id: str, parameters: Optional[Dict] = None):
 async def unload_model(model_id: str):
     """Unload a model from memory."""
     try:
-        # Ensure model_id has .gguf extension
         if not model_id.endswith(".gguf"):
             model_id = f"{model_id}.gguf"
             
         logger.info(f"Requested to unload model: {model_id}")
         
-        # Check if model exists in known models
         if model_id not in _known_models:
             logger.error(f"Model not found in known models: {model_id}")
             raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
         
-        # Get model metadata
         metadata = get_model_metadata(model_id)
         if not metadata:
             logger.error(f"Model metadata not found for {model_id}")
             raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
         
-        # Check if model is loaded
         if not metadata.get("loaded", False) and not metadata.get("status") == "ModelStatus.LOADED":
             logger.info(f"Model {model_id} is not loaded, nothing to do")
             return {"status": "not_loaded", "model_id": model_id}
         
-        # Unload model using singleton instance
         try:
-            # Remove .gguf extension for the model manager
             model_id_without_ext = model_id.replace(".gguf", "")
             model_manager.unload_model(model_id_without_ext)
             logger.info(f"Model unloaded successfully: {model_id}")
             
-            # Update cache with load state
+            # Unregister model from memory tracking
+            memory_manager.unregister_model(model_id_without_ext.lower())
+            
             models_dir = os.getenv("MODELS_DIR")
             if not models_dir:
                 raise HTTPException(status_code=500, detail="MODELS_DIR environment variable not set")
             
-            # Clear loaded status and related fields to move model back to available_models
             _initialize_or_update_cache(
                 models_dir,
                 update_only=True,
@@ -286,7 +293,11 @@ async def unload_model(model_id: str):
             )
             
             logger.info(f"Cache updated: model {model_id} marked as unloaded")
-            return {"status": "unloaded", "model_id": model_id}
+            return {
+                "status": "unloaded", 
+                "model_id": model_id,
+                "memory_metrics": memory_manager.get_memory_metrics()
+            }
         except Exception as e:
             logger.error(f"Error unloading model: {e}")
             raise HTTPException(status_code=500, detail=str(e))

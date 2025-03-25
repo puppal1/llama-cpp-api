@@ -7,10 +7,10 @@ info:
     chat completions, and system monitoring.
 
 servers:
-  - url: http://localhost:8000
-    description: Local development server
   - url: /api/v2
-    description: UI server
+    description: API v2 Base URL
+  - url: http://localhost:8000/api/v2
+    description: Local development server
 
 tags:
   - name: Models
@@ -23,13 +23,15 @@ tags:
 paths:
   /models:
     get:
-      summary: List Available Models
-      description: Returns a list of all available models in the models directory and currently loaded models.
       operationId: listModels
+      summary: List Models
+      description: |
+        Returns a list of all available models, loaded models, and current memory metrics.
+        Includes memory requirements and load safety status for each model.
       tags: [Models]
       responses:
         '200':
-          description: List of available and loaded models
+          description: List of available and loaded models with memory information
           content:
             application/json:
               schema:
@@ -39,12 +41,12 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/ModelInfo'
-                    description: List of models available for loading
                   loaded_models:
                     type: array
                     items:
-                      $ref: '#/components/schemas/LoadedModelInfo'
-                    description: List of currently loaded models
+                      $ref: '#/components/schemas/ModelInfo'
+                  memory_metrics:
+                    $ref: '#/components/schemas/MemoryMetrics'
         '500':
           description: Internal server error
           content:
@@ -75,9 +77,15 @@ paths:
 
   /models/{model_id}/load:
     post:
-      summary: Load Model
-      description: Loads a model into memory with specified parameters.
       operationId: loadModel
+      summary: Load Model
+      description: |
+        Loads a model into memory with specified parameters.
+        Performs memory requirement checks and validates context length.
+        Will fail if:
+        - Required memory exceeds available system memory
+        - Context length exceeds maximum allowed (4096)
+        - System doesn't have enough memory for safe operation
       tags: [Models]
       parameters:
         - name: model_id
@@ -85,7 +93,7 @@ paths:
           required: true
           schema:
             type: string
-          description: The ID (filename) of the model to load
+          description: The ID of the model to load
       requestBody:
         required: true
         content:
@@ -99,12 +107,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LoadModelResponse'
+        '400':
+          description: Memory requirements not met or invalid parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    description: Error message explaining why the model cannot be loaded
+                    example: "Insufficient memory. Required: 12.5GB, Available: 8.2GB"
 
   /models/{model_id}/unload:
     post:
-      summary: Unload Model
-      description: Unloads a model from memory.
       operationId: unloadModel
+      summary: Unload Model
+      description: |
+        Unloads a model from memory and releases its resources.
+        Updates system memory metrics after unloading.
       tags: [Models]
       parameters:
         - name: model_id
@@ -112,14 +133,29 @@ paths:
           required: true
           schema:
             type: string
-          description: The ID (filename) of the model to unload
+          description: The ID of the model to unload
       responses:
         '200':
           description: Model unloaded successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UnloadModelResponse'
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [unloaded]
+                  memory_metrics:
+                    $ref: '#/components/schemas/MemoryMetrics'
+        '404':
+          description: Model not found or not loaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
 
   /chat/{model_id}:
     post:
@@ -176,6 +212,52 @@ paths:
                 type: string
                 description: Server-sent events stream of chat completion chunks
 
+  /chat/{model_id}/reset:
+    post:
+      summary: Reset Chat Context
+      description: |
+        Resets the chat context for the specified model, clearing KV cache and conversation history.
+        This is useful when:
+        1. You want to start a new conversation without model reload
+        2. The context window is full and you want to clear it
+        3. You want to free up memory from the KV cache
+      operationId: resetChatContext
+      tags: [Chat]
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ID of the model whose chat context to reset
+      responses:
+        '200':
+          description: Chat context reset successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [reset]
+                    description: Status of the reset operation
+                  model_id:
+                    type: string
+                    description: ID of the model whose context was reset
+                  memory_metrics:
+                    $ref: '#/components/schemas/MemoryMetrics'
+                    description: Updated memory metrics after context reset
+        '404':
+          description: Model not found or not loaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+
   /metrics:
     get:
       summary: System Metrics
@@ -208,184 +290,164 @@ components:
   schemas:
     ModelInfo:
       type: object
+      required: [id, metadata]
       properties:
         id:
           type: string
           description: Model identifier (filename)
-          example: "llama-2-7b-chat.gguf"
-        size:
-          type: integer
-          format: int64
-          description: Size of the model file in bytes
-          example: 4702869504
         metadata:
+          $ref: '#/components/schemas/ModelMetadata'
+
+    ModelMetadata:
+      type: object
+      required: [model_type, size_gb, memory_required_gb, is_safe_to_load, status]
+      properties:
+        model_type:
+          type: string
+          description: Type/architecture of the model
+          example: llama
+        size_gb:
+          type: number
+          description: |
+            Size of the model file in GB.
+            Used as the base for memory requirement calculations.
+        memory_required_gb:
+          type: number
+          description: |
+            Estimated memory required to load the model, calculated as:
+            base_memory = model_size_gb * 1.2 (development multiplier)
+            context_scaling = max(0, (context_length - 2048) / 1024) * 0.25
+            total_memory = base_memory * (1 + context_scaling)
+            
+            Example:
+            - Model size: 4GB
+            - Context: 4096 tokens
+            - Base memory: 4GB * 1.2 = 4.8GB
+            - Context scaling: ((4096 - 2048) / 1024) * 0.25 = 0.5
+            - Total required: 4.8GB * (1 + 0.5) = 7.2GB
+        is_safe_to_load:
+          type: boolean
+          description: |
+            Whether the model can be safely loaded with current memory.
+            Returns false if:
+            1. required_memory > available_system_memory
+            2. context_length > 4096 tokens
+            3. available_memory < 2GB after loading
+        current_memory_gb:
+          type: number
+          description: Current memory usage if model is loaded
+        parameters:
           type: object
           properties:
-            model_type:
-              type: string
-              description: Type of the model (e.g., llama, mistral)
-              example: "llama"
-            architecture:
-              type: string
-              description: Model architecture details
-              example: "LLaMA v2"
-            quantization_method:
-              type: string
-              description: Method used for model quantization
-              example: "Q4_K_M"
-            quantization_bits:
+            context_length:
               type: integer
-              description: Number of bits used in quantization
-              example: 4
-            parameters:
-              type: object
-              properties:
-                n_ctx_train:
-                  type: integer
-                  description: Context window size used during training
-                  example: 4096
-                n_embd:
-                  type: integer
-                  description: Embedding dimension
-                  example: 4096
-                n_mult:
-                  type: integer
-                  description: Dimension multiplier
-                  example: 256
-                n_head:
-                  type: integer
-                  description: Number of attention heads
-                  example: 32
-                n_layer:
-                  type: integer
-                  description: Number of layers
-                  example: 32
-                n_rot:
-                  type: integer
-                  description: Rotary position embedding dimension
-                  example: 128
-                ftype:
-                  type: integer
-                  description: Model file type
-                  example: 2
-                n_vocab:
-                  type: integer
-                  description: Vocabulary size
-                  example: 32000
-                n_ctx:
-                  type: integer
-                  description: Maximum context window size
-                  example: 4096
-            rope_dimension_count:
+              description: |
+                Maximum context length supported.
+                Every 1024 tokens above 2048 adds 25% to memory requirements.
+            n_gpu_layers:
               type: integer
-              description: Number of dimensions for RoPE
-              example: 128
-            rope_freq_base:
-              type: number
-              description: Base frequency for RoPE
-              example: 10000.0
-            rope_freq_scale:
-              type: number
-              description: Frequency scaling factor for RoPE
-              example: 1.0
-            rope_scaling_type:
-              type: string
-              enum: [none, linear, yarn]
-              description: Type of RoPE scaling used
-              example: "linear"
-            training_info:
-              type: object
-              description: Additional training-related information
-              properties:
-                epochs:
-                  type: integer
-                  example: 3
-                learning_rate:
-                  type: number
-                  example: 2e-5
-            license:
-              type: string
-              description: Model license information
-              example: "MIT"
-            created_at:
-              type: string
-              format: date-time
-              description: Model creation timestamp
-              example: "2024-01-15T10:30:00Z"
+              description: Number of layers to offload to GPU
+        status:
+          type: string
+          enum: [AVAILABLE, LOADING, LOADED, ERROR]
+          description: |
+            Current status of the model:
+            - AVAILABLE: Model file exists but not loaded
+            - LOADING: Model is currently being loaded
+            - LOADED: Model is loaded and ready for use
+            - ERROR: Error occurred during loading
 
-    LoadedModelInfo:
-      allOf:
-        - $ref: '#/components/schemas/ModelInfo'
-        - type: object
+    LoadModelRequest:
+      type: object
+      properties:
+        n_ctx:
+          type: integer
+          description: |
+            Context length for the model.
+            IMPORTANT: Memory usage increases with context length:
+            - Base context (2048): Uses base memory
+            - Every +1024 tokens: Adds 25% more memory
+            - Maximum allowed: 4096 tokens
+            
+            Examples:
+            - 2048 tokens: Base memory
+            - 3072 tokens: Base memory * 1.25
+            - 4096 tokens: Base memory * 1.5
+          minimum: 512
+          maximum: 4096
+          default: 2048
+        n_gpu_layers:
+          type: integer
+          description: Number of layers to offload to GPU
+          minimum: 0
+          default: 0
+        n_batch:
+          type: integer
+          description: Batch size for prompt processing
+          minimum: 1
+          default: 512
+        threads:
+          type: integer
+          description: Number of threads to use
+          minimum: 1
+          default: 4
+        use_mlock:
+          type: boolean
+          description: Whether to lock memory
+          default: true
+        f16_kv:
+          type: boolean
+          description: Use f16 key/value pairs
+          default: true
+
+    LoadModelResponse:
+      type: object
+      required: [status, model_id, memory_metrics]
+      properties:
+        status:
+          type: string
+          enum: [loaded, error]
+        model_id:
+          type: string
+        info:
+          type: object
           properties:
-            status:
-              type: string
-              enum: [loaded, loading, error]
-              description: Current status of the model
-              example: "loaded"
             load_time:
               type: string
               format: date-time
-              description: When the model was loaded
-              example: "2024-01-15T12:00:00Z"
-            load_parameters:
-              type: object
-              properties:
-                num_ctx:
-                  type: integer
-                  description: Context window size
-                  example: 2048
-                num_batch:
-                  type: integer
-                  description: Batch size for inference
-                  example: 512
-                num_thread:
-                  type: integer
-                  description: Number of CPU threads
-                  example: 4
-                num_gpu:
-                  type: integer
-                  description: Number of layers offloaded to GPU
-                  example: 35
-                mlock:
-                  type: boolean
-                  description: Whether memory is locked to prevent swapping
-                  example: true
-                mmap:
-                  type: boolean
-                  description: Whether memory mapping is enabled
-                  example: true
-                vocab_only:
-                  type: boolean
-                  description: Whether only vocabulary is loaded
-                  example: false
-                rope_freq_base:
-                  type: number
-                  description: Base frequency for RoPE
-                  example: 10000.0
-                rope_freq_scale:
-                  type: number
-                  description: Frequency scaling factor for RoPE
-                  example: 1.0
-            performance_metrics:
-              type: object
-              properties:
-                tokens_per_second:
-                  type: number
-                  description: Average tokens generated per second
-                  example: 150.5
-                memory_used:
-                  type: integer
-                  description: Memory usage in bytes
-                  example: 5368709120
-                gpu_memory_used:
-                  type: integer
-                  description: GPU memory usage in bytes
-                  example: 4294967296
-                total_tokens_processed:
-                  type: integer
-                  description: Total number of tokens processed
-                  example: 1000000
+        memory_metrics:
+          $ref: '#/components/schemas/MemoryMetrics'
+
+    MemoryMetrics:
+      type: object
+      required: [system, models, total_model_memory_gb, available_for_models_gb]
+      properties:
+        system:
+          type: object
+          properties:
+            total_gb:
+              type: number
+              description: Total system memory in GB
+            available_gb:
+              type: number
+              description: Available system memory in GB
+            used_gb:
+              type: number
+              description: Used system memory in GB
+            percent_used:
+              type: number
+              description: Percentage of system memory used
+        models:
+          type: object
+          additionalProperties:
+            type: number
+          description: Memory usage per loaded model in GB
+        total_model_memory_gb:
+          type: number
+          description: Total memory used by all loaded models
+        available_for_models_gb:
+          type: number
+          description: Memory available for loading new models
 
     DetailedModelInfo:
       allOf:
@@ -406,54 +468,6 @@ components:
                 average_speed:
                   type: number
 
-    LoadModelRequest:
-      type: object
-      properties:
-        n_gpu_layers:
-          type: integer
-          description: Number of layers to offload to GPU
-        n_ctx:
-          type: integer
-          description: Context window size
-        n_batch:
-          type: integer
-          description: Batch size for prompt processing
-        threads:
-          type: integer
-          description: Number of threads to use
-        use_mlock:
-          type: boolean
-          description: Lock memory to prevent swapping
-        f16_kv:
-          type: boolean
-          description: Use half-precision for key/value cache
-
-    LoadModelResponse:
-      type: object
-      properties:
-        status:
-          type: string
-          enum: [success, error]
-        message:
-          type: string
-        load_time:
-          type: string
-          format: date-time
-        memory_used:
-          type: string
-
-    UnloadModelResponse:
-      type: object
-      properties:
-        status:
-          type: string
-          enum: [success, error]
-        message:
-          type: string
-        unload_time:
-          type: string
-          format: date-time
-
     ChatRequest:
       type: object
       required: [messages]
@@ -469,6 +483,7 @@ components:
                 enum: [system, user, assistant]
               content:
                 type: string
+          minItems: 1
         temperature:
           type: number
           minimum: 0
@@ -479,38 +494,50 @@ components:
           minimum: 0
           maximum: 1
           default: 0.95
-        n_predict:
+        stream:
+          type: boolean
+          default: false
+        stop:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        max_tokens:
           type: integer
           minimum: 1
-          default: 128
+          default: 256
 
     ChatResponse:
       type: object
+      required: [id, model, choices]
       properties:
         id:
           type: string
-        object:
-          type: string
-        created:
-          type: integer
+          description: Unique identifier for this chat completion
         model:
           type: string
+          description: ID of the model used
         choices:
           type: array
           items:
             type: object
+            required: [index, message]
             properties:
               index:
                 type: integer
               message:
                 type: object
+                required: [role, content]
                 properties:
                   role:
                     type: string
+                    enum: [assistant]
                   content:
                     type: string
               finish_reason:
                 type: string
+                enum: [stop, length]
         usage:
           type: object
           properties:
