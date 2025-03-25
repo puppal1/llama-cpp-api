@@ -1,0 +1,620 @@
+openapi: 3.0.0
+info:
+  title: infiniti-Chat-LLama.cpp API
+  version: '2.0.0'
+  description: |
+    REST API for interacting with LLama.cpp models. This API provides endpoints for model management,
+    chat completions, and system monitoring.
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: /api/v2
+    description: UI server
+
+tags:
+  - name: Models
+    description: Model management operations
+  - name: Chat
+    description: Chat completion endpoints
+  - name: System
+    description: System monitoring and health checks
+
+paths:
+  /models:
+    get:
+      summary: List Available Models
+      description: Returns a list of all available models in the models directory and currently loaded models.
+      operationId: listModels
+      tags: [Models]
+      responses:
+        '200':
+          description: List of available and loaded models
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available_models:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ModelInfo'
+                    description: List of models available for loading
+                  loaded_models:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LoadedModelInfo'
+                    description: List of currently loaded models
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /models/{model_id}:
+    get:
+      summary: Get Model Information
+      description: Retrieves detailed information about a specific model.
+      operationId: getModelInfo
+      tags: [Models]
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ID (filename) of the model
+      responses:
+        '200':
+          description: Detailed model information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetailedModelInfo'
+
+  /models/{model_id}/load:
+    post:
+      summary: Load Model
+      description: Loads a model into memory with specified parameters.
+      operationId: loadModel
+      tags: [Models]
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ID (filename) of the model to load
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoadModelRequest'
+      responses:
+        '200':
+          description: Model loaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoadModelResponse'
+
+  /models/{model_id}/unload:
+    post:
+      summary: Unload Model
+      description: Unloads a model from memory.
+      operationId: unloadModel
+      tags: [Models]
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ID (filename) of the model to unload
+      responses:
+        '200':
+          description: Model unloaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnloadModelResponse'
+
+  /chat/{model_id}:
+    post:
+      summary: Chat Completion
+      description: Generate a chat completion with the specified model.
+      operationId: chatCompletion
+      tags: [Chat]
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ID of the model to use for chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Chat completion response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+
+  /chat/{model_id}/stream:
+    post:
+      summary: Chat Completion Stream
+      description: Generate a streaming chat completion with the specified model.
+      operationId: chatCompletionStream
+      tags: [Chat]
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The ID of the model to use for chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Streaming chat completion response
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-sent events stream of chat completion chunks
+
+  /metrics:
+    get:
+      summary: System Metrics
+      description: Get current system metrics including CPU, memory, and GPU usage.
+      operationId: getMetrics
+      tags: [System]
+      responses:
+        '200':
+          description: Current system metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemMetrics'
+
+  /health:
+    get:
+      summary: Health Check
+      description: Check the health status of the API server.
+      operationId: healthCheck
+      tags: [System]
+      responses:
+        '200':
+          description: Health check response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheck'
+
+components:
+  schemas:
+    ModelInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Model identifier (filename)
+          example: "llama-2-7b-chat.gguf"
+        size:
+          type: integer
+          format: int64
+          description: Size of the model file in bytes
+          example: 4702869504
+        metadata:
+          type: object
+          properties:
+            model_type:
+              type: string
+              description: Type of the model (e.g., llama, mistral)
+              example: "llama"
+            architecture:
+              type: string
+              description: Model architecture details
+              example: "LLaMA v2"
+            quantization_method:
+              type: string
+              description: Method used for model quantization
+              example: "Q4_K_M"
+            quantization_bits:
+              type: integer
+              description: Number of bits used in quantization
+              example: 4
+            parameters:
+              type: object
+              properties:
+                n_ctx_train:
+                  type: integer
+                  description: Context window size used during training
+                  example: 4096
+                n_embd:
+                  type: integer
+                  description: Embedding dimension
+                  example: 4096
+                n_mult:
+                  type: integer
+                  description: Dimension multiplier
+                  example: 256
+                n_head:
+                  type: integer
+                  description: Number of attention heads
+                  example: 32
+                n_layer:
+                  type: integer
+                  description: Number of layers
+                  example: 32
+                n_rot:
+                  type: integer
+                  description: Rotary position embedding dimension
+                  example: 128
+                ftype:
+                  type: integer
+                  description: Model file type
+                  example: 2
+                n_vocab:
+                  type: integer
+                  description: Vocabulary size
+                  example: 32000
+                n_ctx:
+                  type: integer
+                  description: Maximum context window size
+                  example: 4096
+            rope_dimension_count:
+              type: integer
+              description: Number of dimensions for RoPE
+              example: 128
+            rope_freq_base:
+              type: number
+              description: Base frequency for RoPE
+              example: 10000.0
+            rope_freq_scale:
+              type: number
+              description: Frequency scaling factor for RoPE
+              example: 1.0
+            rope_scaling_type:
+              type: string
+              enum: [none, linear, yarn]
+              description: Type of RoPE scaling used
+              example: "linear"
+            training_info:
+              type: object
+              description: Additional training-related information
+              properties:
+                epochs:
+                  type: integer
+                  example: 3
+                learning_rate:
+                  type: number
+                  example: 2e-5
+            license:
+              type: string
+              description: Model license information
+              example: "MIT"
+            created_at:
+              type: string
+              format: date-time
+              description: Model creation timestamp
+              example: "2024-01-15T10:30:00Z"
+
+    LoadedModelInfo:
+      allOf:
+        - $ref: '#/components/schemas/ModelInfo'
+        - type: object
+          properties:
+            status:
+              type: string
+              enum: [loaded, loading, error]
+              description: Current status of the model
+              example: "loaded"
+            load_time:
+              type: string
+              format: date-time
+              description: When the model was loaded
+              example: "2024-01-15T12:00:00Z"
+            load_parameters:
+              type: object
+              properties:
+                num_ctx:
+                  type: integer
+                  description: Context window size
+                  example: 2048
+                num_batch:
+                  type: integer
+                  description: Batch size for inference
+                  example: 512
+                num_thread:
+                  type: integer
+                  description: Number of CPU threads
+                  example: 4
+                num_gpu:
+                  type: integer
+                  description: Number of layers offloaded to GPU
+                  example: 35
+                mlock:
+                  type: boolean
+                  description: Whether memory is locked to prevent swapping
+                  example: true
+                mmap:
+                  type: boolean
+                  description: Whether memory mapping is enabled
+                  example: true
+                vocab_only:
+                  type: boolean
+                  description: Whether only vocabulary is loaded
+                  example: false
+                rope_freq_base:
+                  type: number
+                  description: Base frequency for RoPE
+                  example: 10000.0
+                rope_freq_scale:
+                  type: number
+                  description: Frequency scaling factor for RoPE
+                  example: 1.0
+            performance_metrics:
+              type: object
+              properties:
+                tokens_per_second:
+                  type: number
+                  description: Average tokens generated per second
+                  example: 150.5
+                memory_used:
+                  type: integer
+                  description: Memory usage in bytes
+                  example: 5368709120
+                gpu_memory_used:
+                  type: integer
+                  description: GPU memory usage in bytes
+                  example: 4294967296
+                total_tokens_processed:
+                  type: integer
+                  description: Total number of tokens processed
+                  example: 1000000
+
+    DetailedModelInfo:
+      allOf:
+        - $ref: '#/components/schemas/ModelInfo'
+        - type: object
+          properties:
+            status:
+              type: string
+              enum: [loaded, unloaded]
+            performance:
+              type: object
+              properties:
+                load_time:
+                  type: string
+                  format: date-time
+                tokens_processed:
+                  type: integer
+                average_speed:
+                  type: number
+
+    LoadModelRequest:
+      type: object
+      properties:
+        n_gpu_layers:
+          type: integer
+          description: Number of layers to offload to GPU
+        n_ctx:
+          type: integer
+          description: Context window size
+        n_batch:
+          type: integer
+          description: Batch size for prompt processing
+        threads:
+          type: integer
+          description: Number of threads to use
+        use_mlock:
+          type: boolean
+          description: Lock memory to prevent swapping
+        f16_kv:
+          type: boolean
+          description: Use half-precision for key/value cache
+
+    LoadModelResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success, error]
+        message:
+          type: string
+        load_time:
+          type: string
+          format: date-time
+        memory_used:
+          type: string
+
+    UnloadModelResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success, error]
+        message:
+          type: string
+        unload_time:
+          type: string
+          format: date-time
+
+    ChatRequest:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          items:
+            type: object
+            required: [role, content]
+            properties:
+              role:
+                type: string
+                enum: [system, user, assistant]
+              content:
+                type: string
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 2
+          default: 0.7
+        top_p:
+          type: number
+          minimum: 0
+          maximum: 1
+          default: 0.95
+        n_predict:
+          type: integer
+          minimum: 1
+          default: 128
+
+    ChatResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+        created:
+          type: integer
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              message:
+                type: object
+                properties:
+                  role:
+                    type: string
+                  content:
+                    type: string
+              finish_reason:
+                type: string
+        usage:
+          type: object
+          properties:
+            prompt_tokens:
+              type: integer
+            completion_tokens:
+              type: integer
+            total_tokens:
+              type: integer
+
+    SystemMetrics:
+      type: object
+      properties:
+        cpu:
+          type: object
+          properties:
+            utilization:
+              type: number
+            cores:
+              type: object
+              properties:
+                physical:
+                  type: integer
+                logical:
+                  type: integer
+            frequency:
+              type: object
+              properties:
+                current:
+                  type: integer
+                min:
+                  type: integer
+                max:
+                  type: integer
+        memory:
+          type: object
+          properties:
+            total_mb:
+              type: integer
+            available_mb:
+              type: integer
+            used_mb:
+              type: integer
+            percent:
+              type: number
+        gpu:
+          type: object
+          properties:
+            available:
+              type: boolean
+            name:
+              type: string
+            memory:
+              type: object
+              properties:
+                total_mb:
+                  type: integer
+                used_mb:
+                  type: integer
+                percent:
+                  type: number
+        timestamp:
+          type: string
+          format: date-time
+
+    HealthCheck:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+        version:
+          type: string
+        uptime:
+          type: string
+        last_error:
+          type: string
+
+    Error:
+      type: object
+      properties:
+        detail:
+          type: object
+          properties:
+            error:
+              type: string
+              description: Error type
+              example: "Internal Server Error"
+            message:
+              type: string
+              description: Detailed error message
+              example: "Failed to load model metadata"
+            type:
+              type: string
+              description: Python exception type
+              example: "RuntimeError"
+            traceback:
+              type: string
+              description: Full error traceback
+            request_path:
+              type: string
+              description: Request path that caused the error
+              example: "/api/v2/models"
+            request_method:
+              type: string
+              description: HTTP method of the request
+              example: "GET" 

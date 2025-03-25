@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.exceptions import RequestValidationError
 from llama_cpp_api_package.routes2.model_routes import router as v2_model_router
 from llama_cpp_api_package.routes2.metrics_routes import router as v2_metrics_router
@@ -15,6 +15,7 @@ import socket
 import json
 import traceback
 from pathlib import Path
+from fastapi.staticfiles import StaticFiles
 
 # Setup logging first
 setup_logging()
@@ -27,6 +28,9 @@ if not MODELS_DIR.exists():
     raise RuntimeError(f"Models directory not found at {MODELS_DIR}")
 
 logger.info(f"Using models directory: {MODELS_DIR}")
+
+# Get the absolute path to the docs directory
+DOCS_DIR = os.path.join(os.path.dirname(__file__), "static", "docs")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -46,6 +50,9 @@ async def lifespan(app: FastAPI):
         # Initialize model cache at startup
         initialize_cache(models_dir)
         
+        # Ensure docs directory exists
+        os.makedirs(DOCS_DIR, exist_ok=True)
+        
         yield
         
     finally:
@@ -55,9 +62,11 @@ async def lifespan(app: FastAPI):
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Llama CPP API",
-    description="REST API for Llama.cpp models",
-    version="0.1.0",
+    title="LLama.cpp API",
+    description="REST API for interacting with LLama.cpp models",
+    version="2.0.0",
+    docs_url=None,  # Disable default Swagger UI
+    redoc_url=None,  # Disable default ReDoc
     lifespan=lifespan
 )
 
@@ -112,6 +121,17 @@ app.add_middleware(
 app.include_router(v2_model_router, prefix="/api/v2")
 app.include_router(v2_metrics_router, prefix="/api/v2")
 app.include_router(v2_chat_router, prefix="/api/v2")
+
+# Mount the docs directory to serve static files
+app.mount("/api/v2/docs", StaticFiles(directory=DOCS_DIR), name="docs")
+
+# Serve OpenAPI spec
+@app.get("/api/v2/docs/openapi.yaml")
+async def get_openapi_yaml():
+    yaml_path = os.path.join(DOCS_DIR, "openapi.yaml")
+    if not os.path.exists(yaml_path):
+        raise HTTPException(status_code=404, detail=f"OpenAPI specification not found at {yaml_path}")
+    return FileResponse(yaml_path, media_type="text/yaml")
 
 # Add compatibility routes (redirect from /api to /api/v2)
 @app.get("/api/models")

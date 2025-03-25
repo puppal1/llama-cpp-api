@@ -1,57 +1,32 @@
-import { Box, Container, Tab, Tabs } from '@mui/material';
-import { useState } from 'react';
-import ModelManager from './ModelManager';
-import Chat from './Chat';
+import { Outlet } from 'react-router-dom';
+import Sidebar from './Sidebar';
 
-interface TabPanelProps {
-  children?: React.ReactNode;
-  index: number;
-  value: number;
-}
-
-function TabPanel(props: TabPanelProps) {
-  const { children, value, index, ...other } = props;
-
+const Layout = () => {
   return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`simple-tabpanel-${index}`}
-      aria-labelledby={`simple-tab-${index}`}
-      {...other}
-    >
-      {value === index && (
-        <Box sx={{ p: 3 }}>
-          {children}
-        </Box>
-      )}
+    <div className="flex h-screen bg-terminal-background text-terminal-foreground overflow-hidden">
+      {/* Sidebar */}
+      <Sidebar />
+      
+      {/* Main Content */}
+      <main className="flex-1 p-4 overflow-auto">
+        <div className="terminal-window min-h-full">
+          <div className="terminal-header">
+            <div className="flex space-x-2">
+              <div className="w-3 h-3 rounded-full bg-red-500"></div>
+              <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+              <div className="w-3 h-3 rounded-full bg-green-500"></div>
+            </div>
+            <div className="terminal-title">LLama.cpp API Terminal</div>
+            <div className="text-xs text-terminal-dimmed">v2.0.0</div>
+          </div>
+          
+          <div className="terminal-content p-4">
+            <Outlet />
+          </div>
+        </div>
+      </main>
     </div>
   );
-}
-
-function Layout() {
-  const [tabValue, setTabValue] = useState(0);
-
-  const handleChange = (_event: React.SyntheticEvent, newValue: number) => {
-    setTabValue(newValue);
-  };
-
-  return (
-    <Container maxWidth="lg" sx={{ mt: 4 }}>
-      <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-        <Tabs value={tabValue} onChange={handleChange} aria-label="basic tabs">
-          <Tab label="Models" />
-          <Tab label="Chat" />
-        </Tabs>
-      </Box>
-      <TabPanel value={tabValue} index={0}>
-        <ModelManager />
-      </TabPanel>
-      <TabPanel value={tabValue} index={1}>
-        <Chat />
-      </TabPanel>
-    </Container>
-  );
-}
+};
 
 export default Layout; 

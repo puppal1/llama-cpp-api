@@ -1,3 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-terminal-background text-terminal-foreground;
+  }
+  
+  body {
+    @apply font-mono m-0 p-0;
+  }
+  
+  ::-webkit-scrollbar {
+    @apply w-2;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-terminal-background;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-terminal-commandPrompt rounded-md;
+  }
+}
+
+@layer components {
+  .terminal-window {
+    @apply bg-terminal-background text-terminal-foreground rounded-md border border-terminal-green p-4 shadow-terminal;
+  }
+  
+  .terminal-header {
+    @apply flex items-center justify-between mb-2 border-b border-terminal-dimmed pb-2;
+  }
+  
+  .terminal-title {
+    @apply text-terminal-green font-bold;
+  }
+  
+  .terminal-prompt {
+    @apply text-terminal-commandPrompt mr-2;
+  }
+  
+  .terminal-cursor {
+    @apply bg-terminal-green w-2 h-5 inline-block animate-cursor-blink;
+  }
+  
+  .command-input {
+    @apply bg-transparent border-none text-terminal-foreground outline-none w-full font-mono;
+  }
+  
+  .command-output {
+    @apply my-1 whitespace-pre-wrap;
+  }
+  
+  .nav-link {
+    @apply px-4 py-2 hover:bg-terminal-highlight/20 transition-colors rounded;
+  }
+  
+  .nav-link.active {
+    @apply bg-terminal-highlight/30 text-terminal-green;
+  }
+  
+  .glow-text {
+    @apply text-terminal-green shadow-glow;
+  }
+  
+  .ascii-art {
+    @apply text-terminal-green font-mono whitespace-pre text-xs;
+  }
+}
+
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;

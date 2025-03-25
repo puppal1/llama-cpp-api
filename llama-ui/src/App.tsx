@@ -1,25 +1,22 @@
-import { ThemeProvider, CssBaseline, createTheme } from '@mui/material';
+import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
-
-// Create theme
-const theme = createTheme({
-  palette: {
-    mode: 'light',
-    primary: {
-      main: '#1976d2',
-    },
-    secondary: {
-      main: '#dc004e',
-    },
-  },
-});
+import Dashboard from './pages/Dashboard';
+import Models from './pages/Models';
+import Chat from './pages/Chat';
+import ApiDocs from './pages/ApiDocs';
+import NotFound from './pages/NotFound';
 
 function App() {
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <Layout />
-    </ThemeProvider>
+    <Routes>
+      <Route path="/" element={<Layout />}>
+        <Route index element={<Dashboard />} />
+        <Route path="models" element={<Models />} />
+        <Route path="chat" element={<Chat />} />
+        <Route path="api-docs" element={<ApiDocs />} />
+        <Route path="*" element={<NotFound />} />
+      </Route>
+    </Routes>
   );
 }
 
